@@ -251,6 +251,85 @@ docker-compose是一个docker的一个批处理工具，可以一次性启动很
 Docker Compose version v2.16.0
 ```
 
+##### 安装Go环境
+
+直接：
+
+`apt-get update`
+
+`apt-get install golang`
+
+这种aliyun镜像安装的是1.13版本太低了，目前最好安装1.18（2023-3-9）
+
+官网下载
+
+[All releases - The Go Programming Language (google.cn)](https://golang.google.cn/dl/)
+
+```bash
+wget https://golang.google.cn/dl/go1.18.5.linux-amd64.tar.gz
+```
+
+```shell
+tar -xfzv go1.18.10.linux-amd64.tar.gz -C /usr/local
+```
+
+修改环境配置：
+
+```shell
+sudo vim /etc/profile
+
+#在最后添加：
+export GOROOT=/usr/local/go
+export GOPATH=$HOME/gowork
+export GOBIN=$GOPATH/bin
+export PATH=$GOPATH:$GOBIN:$GOROOT/bin:$PATH
+
+#保存退出
+cd ~ 
+vim .bashrc
+#将以下命令写在最后
+source /etc/profile
+
+#执行一下
+source /etc/profile
+
+#检查go是否安装好
+go env
+
+#会出现以下信息：
+GO111MODULE="on"
+GOARCH="amd64"
+GOBIN="/root/gowork/bin"
+GOCACHE="/root/.cache/go-build"
+GOENV="/root/.config/go/env"
+GOEXE=""
+GOEXPERIMENT=""
+GOFLAGS=""
+GOHOSTARCH="amd64"
+GOHOSTOS="linux"
+GOINSECURE=""
+GOMODCACHE="/root/gowork/pkg/mod"
+GONOPROXY=""
+GONOSUMDB=""
+GOOS="linux"
+GOPATH="/root/gowork"
+GOPRIVATE=""
+GOPROXY="https://proxy.golang.org,direct"
+GOROOT="/usr/local/go"
+GOSUMDB="sum.golang.org"
+GOTMPDIR=""
+GOTOOLDIR="/usr/local/go/pkg/tool/linux_amd64"
+GOVCS=""
+GOVERSION="go1.18.10"
+...
+```
+
+使用以下两个命令，将go的代理换为国内代理
+
+`go env -w GOPROXY=https://goproxy.io,direct`
+
+`go env -w GO111MODULE=on`
+
 ##### HF测试网络
 
 进入到目录：`/fabric-samples/test-network` 可以运行测试网络
@@ -296,20 +375,41 @@ b6b117c81c7f   hyperledger/fabric-peer:latest      "peer node start"   2 seconds
 
 也可以自定义指定channel
 
-##### 安装Go环境
+前两步可以结合
 
-直接：
+```
+./network.sh up createChannel
+```
 
-`apt-get update`
+`./network.sh down`是关闭当前网络，并且释放容器
 
-`apt-get install golang`
+在通道上启动chaincode：`./network.sh deployCC -ccn basic -ccp ../asset-transfer-basic/chaincode-go -ccl go`
 
-修改环境配置：
+注意：可能会出现以下报错：
 
-`go env -w GOPROXY=https://goproxy.io,direct`
+```shell
+...
+ng --label basic_1.0
++ res=1
+++ peer lifecycle chaincode calculatepackageid basic.tar.gz
+Error: failed to read chaincode package at 'basic.tar.gz': open basic.tar.gz: no such file or directory
++ PACKAGE_ID=
+Error: failed to normalize chaincode path: 'go list' failed with: go: updates to go.mod needed; to update it:
+	go mod tidy: exit status 1
+Chaincode packaging has failed
+Deploying chaincode failed
 
-`go env -w GO111MODULE=on`
+```
+
+这个时候进入`../asset-transfer-basic/chaincode-go`路径下，执行：`go mod tidy`会对依据当前go版本对go.mod文件进行更新：
+
+![image-20230309003533136](assets/image-20230309003533136.png)
+
+执行成功后会出现以下结果：
+
+![image-20230309003616217](assets/image-20230309003616217.png)
 
 #### Anchor peer 锚节点
 
 同一个网络（同一个org）的peer是能够互相发现的，所以能马上同步数据，但是不同Org的peer并不在一个网络中，就需要Anchor peer来进行通信（采用gossip协议：”一传十，十传百“）
+
