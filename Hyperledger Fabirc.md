@@ -224,3 +224,92 @@ hub.docker.com
 下载fabric-samples：`curl -sSL https://raw.githubusercontent.com/hyperledger/fabric/main/scripts/bootstrap.sh| bash -s`
 
 > 采用官方脚本下载，速度很慢，因为有wall：下载内容包括二进制文件 fabric binaries（国内服务器1h24min，很晕）
+
+在linux（ubuntu）里，fabric-samples会比在windows下多一个bin文件夹：
+
+![image-20230308143850059](assets/image-20230308143850059.png)
+
+进入文件夹，里面是一些fabric会用到的一些工具：
+
+![image-20230308143956943](assets/image-20230308143956943.png)
+
+docker-compose是一个docker的一个批处理工具，可以一次性启动很多个docker
+
+##### 安装docker-compose
+
+官方文档：[Install the Compose standalone (docker.com)](https://docs.docker.com/compose/install/other/)
+
+文档使用：`curl -SL https://github.com/docker/compose/releases/download/v2.16.0/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose`
+
+这样会很慢很慢：可以改成：`curl -SL https://github.com/docker/compose/releases/download/v2.16.0/docker-compose-'uname -s'-'uname -m' -o /usr/local/bin/docker-compose`
+
+> 注意这里的v2.16.0，可以根据需要换成对应的版本，特别是注意看官方版本是否带 `v`
+
+完成后：`docker compose version`验证是否安装成功，成功后会显示：
+
+```shell
+Docker Compose version v2.16.0
+```
+
+##### HF测试网络
+
+进入到目录：`/fabric-samples/test-network` 可以运行测试网络
+
+运行：
+
+```shell
+#关闭网络已创建的容器
+./network.sh down
+#启动测试网络
+./network.sh up 
+```
+
+会得到类似以下结果
+
+```shell
+Creating network "fabric_test" with the default driver
+Creating volume "net_orderer.example.com" with default driver
+Creating volume "net_peer0.org1.example.com" with default driver
+Creating volume "net_peer0.org2.example.com" with default driver
+Creating peer0.org2.example.com ... done
+Creating orderer.example.com    ... done
+Creating peer0.org1.example.com ... done
+Creating cli                    ... done
+CONTAINER ID   IMAGE                               COMMAND             CREATED         STATUS                  PORTS                                            NAMES
+1667543b5634   hyperledger/fabric-tools:latest     "/bin/bash"         1 second ago    Up Less than a second                                                    cli
+b6b117c81c7f   hyperledger/fabric-peer:latest      "peer node start"   2 seconds ago   Up 1 second             0.0.0.0:7051->7051/tcp                           peer0.org1.example.com
+703ead770e05   hyperledger/fabric-orderer:latest   "orderer"           2 seconds ago   Up Less than a second   0.0.0.0:7050->7050/tcp, 0.0.0.0:7053->7053/tcp   orderer.example.com
+718d43f5f312   hyperledger/fabric-peer:latest      "peer node start"   2 seconds ago   Up 1 second             7051/tcp, 0.0.0.0:9051->9051/tcp                 peer0.org2.example.com
+```
+
+创建了，cli，peer0，peer1和orderer；再运行：
+
+```shell
+./network.sh createChannel
+```
+
+最终会创建mychannel，并且加入网络
+
+![image-20230308152926714](assets/image-20230308152926714.png)
+
+![image-20230308152941322](assets/image-20230308152941322.png)
+
+也可以自定义指定channel
+
+##### 安装Go环境
+
+直接：
+
+`apt-get update`
+
+`apt-get install golang`
+
+修改环境配置：
+
+`go env -w GOPROXY=https://goproxy.io,direct`
+
+`go env -w GO111MODULE=on`
+
+#### Anchor peer 锚节点
+
+同一个网络（同一个org）的peer是能够互相发现的，所以能马上同步数据，但是不同Org的peer并不在一个网络中，就需要Anchor peer来进行通信（采用gossip协议：”一传十，十传百“）
