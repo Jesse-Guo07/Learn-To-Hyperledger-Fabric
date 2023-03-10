@@ -361,6 +361,8 @@ b6b117c81c7f   hyperledger/fabric-peer:latest      "peer node start"   2 seconds
 718d43f5f312   hyperledger/fabric-peer:latest      "peer node start"   2 seconds ago   Up 1 second             7051/tcp, 0.0.0.0:9051->9051/tcp                 peer0.org2.example.com
 ```
 
+运行`./network.sh up`时，会看到cryptogen工具正在创建Org1，Org2和Orderer Org的证书和密钥。
+
 创建了，cli，peer0，peer1和orderer；再运行：
 
 ```shell
@@ -412,4 +414,174 @@ Deploying chaincode failed
 #### Anchor peer 锚节点
 
 同一个网络（同一个org）的peer是能够互相发现的，所以能马上同步数据，但是不同Org的peer并不在一个网络中，就需要Anchor peer来进行通信（采用gossip协议：”一传十，十传百“）
+
+### 与网络交互
+
+当把chaincode部署好之后，可以使用peer CLI与网络进行交互，peer CLI允许调用已部署的只能合约来更新通道，或者安装和部署新的智能合约。
+
+eg：在test-network目录下操作：在`fabric-samples`代码库的`bin`文件夹中找到`peer`二进制文件。 使用以下命令将这些二进制文件添加到您的CLI路径：
+
+```shell
+export PATH=${PWD}/../bin:$PATH
+```
+
+还需要将`fabric-samples`代码库中的`FABRIC_CFG_PATH`设置为指向其中的`core.yaml`文件：
+
+```shell
+export FABRIC_CFG_PATH=$PWD/../config/
+```
+
+可以设置环境变量，以允许您作为Org1操作`peer` CLI：
+
+```shell
+# Environment variables for Org1
+
+export CORE_PEER_TLS_ENABLED=true 
+export CORE_PEER_LOCALMSPID="Org1MSP"
+
+#CORE_PEER_TLS_ROOTCERT_FILE和CORE_PEER_MSPCONFIGPATH环境变量指向Org1的organizations文件夹中的的加密材料
+export CORE_PEER_TLS_ROOTCERT_FILE=${PWD}/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt
+export CORE_PEER_MSPCONFIGPATH=${PWD}/organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp
+export CORE_PEER_ADDRESS=localhost:7051 
+
+#如果使用 ./network.sh deployCC -ccl go 安装和启动 asset-transfer (basic) 链码，您可以调用链码（Go）的 InitLedger 方法来赋予一些账本上的初始资产（如果使用 typescript 或者 javascript，例如 ./network.sh deployCC -l javascript，你会调用相关链码的 initLedger 功能）--来自官方文档
+```
+
+运行以下命令用一些资产来初始化账本：
+
+```shell
+peer chaincode invoke -o localhost:7050 --ordererTLSHostnameOverride orderer.example.com --tls --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem -C mychannel -n basic --peerAddresses localhost:7051 --tlsRootCertFiles ${PWD}/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt --peerAddresses localhost:9051 --tlsRootCertFiles ${PWD}/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt -c '{"function":"InitLedger","Args":[]}'
+```
+
+如果命令成功，您将观察到类似以下的输出：
+
+```shell
+-> INFO 001 Chaincode invoke successful. result: status:200
+```
+
+![image-20230310162521138](assets/image-20230310162521138.png)
+
+可以使用CLI工具来查询账本，运行以下指令来获取添加到通道账本的资产列表：
+
+```shell
+peer chaincode query -C mychannel -n basic -c '{"Args":["GetAllAssets"]}'
+```
+
+如果成功，将看到类似以下输出：
+
+```shell
+[
+  {"ID": "asset1", "color": "blue", "size": 5, "owner": "Tomoko", "appraisedValue": 300},
+  {"ID": "asset2", "color": "red", "size": 5, "owner": "Brad", "appraisedValue": 400},
+  {"ID": "asset3", "color": "green", "size": 10, "owner": "Jin Soo", "appraisedValue": 500},
+  {"ID": "asset4", "color": "yellow", "size": 10, "owner": "Max", "appraisedValue": 600},
+  {"ID": "asset5", "color": "black", "size": 15, "owner": "Adriana", "appraisedValue": 700},
+  {"ID": "asset6", "color": "white", "size": 15, "owner": "Michel", "appraisedValue": 800}
+]
+```
+
+![image-20230310162829735](assets/image-20230310162829735.png)
+
+当一个网络成员希望在账本上转一些或者改变一些资产，链码会被调用。使用以下的指令来通过调用 asset-transfer (basic) 链码改变账本上的资产所有者：
+
+```shell
+peer chaincode invoke -o localhost:7050 --ordererTLSHostnameOverride orderer.example.com --tls --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem -C mychannel -n basic --peerAddresses localhost:7051 --tlsRootCertFiles ${PWD}/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt --peerAddresses localhost:9051 --tlsRootCertFiles ${PWD}/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt -c '{"function":"TransferAsset","Args":["asset6","Christopher"]}'
+```
+
+如果命令成功，应该看到以下响应（以当时实验为例）：
+
+```shell
+2023-03-10 16:31:38.107 CST 0001 INFO [chaincodeCmd] chaincodeInvokeOrQuery -> Chaincode invoke successful. result: status:200 payload:"Michel" 
+```
+
+![image-20230310163304267](assets/image-20230310163304267.png)
+
+官方文档解释：因为 asset-transfer (basic) 链码的背书策略需要交易同时被 Org1 和 Org2 签名，链码调用指令需要使用 ：
+
+`--peerAddresses` 标签来指向 `peer0.org1.example.com` 和 `peer0.org2.example.com`。
+
+因为网络的 TLS 被开启，指令也需要用：
+
+ `--tlsRootCertFiles` 标签指向每个 peer 节点的 TLS 证书。
+
+查看以下路径文件的内容：
+
+```shell
+${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+```
+
+可以看到证书内容为如下：
+
+![image-20230310163853245](assets/image-20230310163853245.png)
+
+调用链码之后，我们可以使用另一个查询来查看调用如何改变了区块链账本的资产。因为我们已经查询了 Org1 的 peer，我们可以把这个查询链码的机会通过 Org2 的 peer 来运行。设置以下的环境变量来操作 Org2：
+
+```shell
+# Environment variables for Org2
+
+export CORE_PEER_TLS_ENABLED=true
+export CORE_PEER_LOCALMSPID="Org2MSP"
+export CORE_PEER_TLS_ROOTCERT_FILE=${PWD}/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt
+export CORE_PEER_MSPCONFIGPATH=${PWD}/organizations/peerOrganizations/org2.example.com/users/Admin@org2.example.com/msp
+export CORE_PEER_ADDRESS=localhost:9051
+```
+
+你可以查询运行在 `peer0.org2.example.com` asset-transfer (basic) 链码：
+
+```shell
+peer chaincode query -C mychannel -n basic -c '{"Args":["ReadAsset","asset6"]}'
+```
+
+结果显示 `"asset6"` 转给了 Christopher:
+
+```shell
+root@host:~/fabric-samples/test-network#
+peer chaincode query -C mychannel -n basic -c '{"Args":["ReadAsset","asset6"]}'
+#结果
+{"AppraisedValue":800,"Color":"white","ID":"asset6","Owner":"Christopher","Size":15}
+```
+
+![image-20230310164243369](assets/image-20230310164243369.png)
+
+以上则为与网络交互的整个流程。
+
+##### 补充：测试网络脚本还提供了使用证书颁发机构（CA）的网络的启动选项
+
+在使用ca启动前，应该down掉当前网络，然后使用：
+
+```
+./network.sh up -ca
+```
+
+![image-20230310165452458](assets/image-20230310165452458.png)
+
+值得花一些时间检查`/ network.sh`脚本部署CA之后生成的日志：
+
+测试网络使用Fabric CA客户端以每个组织的CA注册节点和用户身份。 之后这个脚本使用enroll命令为每个身份生成一个MSP文件夹。 MSP文件夹包含每个身份的证书和私钥，以及在运营CA的组织中建立身份的角色和成员身份。 可以使用以下命令来检查Org1管理员用户的MSP文件夹：
+
+```shell
+tree organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/
+```
+
+该命令将显示MSP文件夹的结构和配置文件：
+
+![image-20230310165630804](assets/image-20230310165630804.png)
+
+可以在`signcerts`文件夹中找到管理员用户的证书，然后在`keystore`文件夹中找到私钥。
+
+cryptogen和Fabric CA都为每个组织在`organizations`文件夹中生成加密材料。 您可以在`organizations/fabric-ca`目录中的`registerEnroll.sh`脚本中找到用于设置网络的命令。
+
+![image-20230310165856135](assets/image-20230310165856135.png)
+
+以下是官方文档对整个过程的幕后做的解释：
+
+> 如果您有兴趣了解有关示例网络的更多信息，则可以调查`test-network`目录中的文件和脚本。 下面的步骤提供了有关在您发出`./network.sh up`命令时会发生什么情况的导览。
+>
+> - `./ network.sh`为两个对等组织和排序组织创建证书和密钥。 默认情况下，脚本利用cryptogen工具使用位于`organizations/cryptogen`文件夹中的配置文件。 如果使用`-ca`标志创建证书颁发机构，则脚本使用Fabric CA服务器配置文件和位于`organizations/fabric-ca`文件夹的`registerEnroll.sh`脚本。 cryptogen和Fabric CA均会在`organisations`文件夹创建所有三个组织中的加密资料和MSP文件夹。
+> - 该脚本使用configtxgen工具创建系统通道生成块。 Configtxgen使用了`TwoOrgsOrdererGenesis`通道配置文件中的`configtx/configtx.yaml`文件创建创世区块。 区块被存储在`system-genesis-block`文件夹中。
+> - 一旦组织的加密资料和系统通道的创始块生成后，`network.sh`就可以启动网络的节点。 脚本使用`docker`文件夹中的`docker-compose-test-net.yaml`文件创建对等节点和排序节点。 `docker`文件夹还包含 `docker-compose-e2e.yaml`文件启动网络节点三个Fabric CA。 该文件旨在用于Fabric SDK 运行端到端测试。 请参阅[Node SDK](https://github.com/hyperledger/fabric-sdk-node)代码库有关运行这些测试的详细信息。
+> - 如果您使用`createChannel`子命令，则`./ network.sh`使用提供的频道名称， 运行在`scripts`文件夹中的`createChannel.sh`脚本来创建通道。 该脚本使用`configtx.yaml`文件来创建通道创作事务，以及两个锚对等节点更新交易。 该脚本使用对等节点cli创建通道，加入`peer0.org1.example.com`和`peer0.org2.example.com` 到频道， 以及使两个对等节点都成为锚对等节点。
+> - 如果执行`deployCC`命令，`./ network.sh`会运行`deployCC.sh`脚本在两个 peer 节点上安装**asset-transfer (basic)**链码， 然后定义通道上的链码。 一旦将链码定义提交给通道，对等节点cli使用`Init`初始化链码并调用链码将初始数据放入账本。
+
+更多详情查看官方文档--中文：[使用Fabric的测试网络 — hyperledger-fabricdocs master 文档](https://hyperledger-fabric.readthedocs.io/zh_CN/latest/test_network.html#)
 
