@@ -585,3 +585,45 @@ cryptogen和Fabric CA都为每个组织在`organizations`文件夹中生成加�
 
 更多详情查看官方文档--中文：[使用Fabric的测试网络 — hyperledger-fabricdocs master 文档](https://hyperledger-fabric.readthedocs.io/zh_CN/latest/test_network.html#)
 
+### 二进制文件
+
+在使用脚本拉取fabric-sample的时候下载的二进制文件，实际就是bin文件夹里的内容：
+
+`~/fabric-samples/bin`
+
+![image-20230313100554180](assets/image-20230313100554180.png)
+
+### hyperleadger组成结构理解
+
+hyperledger网络可以有多个组织（Org）
+
+- 一个组织可以有多个peer（电脑/终端），同步数据记账
+- 一个组织可以有一个或者多个用户（一个用户可以管理多个peer）
+- 一个组织内部必须有一个admin管理员
+
+### 手动End-2-End测试（手动创建网络）
+
+1. 创建文件夹my-network：定义who is who
+
+   在./fabric-samples下`mkdir my-network`
+
+2. 配置文件
+
+   定义组织（Orgs）、Orderer（可以定义多个）、用户数量
+
+   
+
+   <font color=red>------------------------2.x和1.x配置方法有不同，还需另外学习-------------------------</font>
+
+   
+
+   > OU：organization unit组织单位
+
+3. 创世区块配置和生成
+
+   在创世区块里，写入初始参与者所有用户的信息，这样后来加入的用户则无法修改msp中相关信息。（由Hash指向区块）黑客创造一个假的peer节点，没有大家的数字签名证书，则无法与其他节点通讯。
+
+   注：Fabric2.x排序类型使用EtcdRaft
+
+4. 
+
