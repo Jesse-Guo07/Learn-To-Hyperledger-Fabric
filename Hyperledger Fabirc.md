@@ -611,13 +611,112 @@ hyperledger网络可以有多个组织（Org）
 
    定义组织（Orgs）、Orderer（可以定义多个）、用户数量
 
+   <font color=red>生成证书：</font>
+
+   这里利用`cryptogen`工具来生成证书文件，可以先用`cryptogen showtemplate`生成一份模板证书配置文件
+
+   ```shell
+   cryptogen showtemplate > crypto-config.yaml  # 生成一份模板证书配置文件
+   ```
+
+   ```yaml
+   
+   OrdererOrgs: 									#orderer组织的配置
+   
+     - Name: Orderer 								#组织名
+       Domain: example.com							#组织的域名
+       EnableNodeOUs: false						#设置了EnableNodeOUs，会在map下生成config.yaml文件，OU：组织单元，模板生成的是false，我
+       Specs:
+         - Hostname: orderer						# 生成的证书文件会以{{Hostname}}.{{Domain}}呈现　当前的文件名就是
+         - localhost								# orderer.example.com
+   
+   
+   PeerOrgs:									# 每个peer组织配置（机构）
+   
+     - Name: Org1								# 机构名称
+       Domain: org1.example.com				# 机构的域名
+       EnableNodeOUs: true
+       #这里template根据count来生成指定份数的证书文件
+       #对于Template的原英文注解：
+       # ---------------------------------------------------------------------------
+       # "Template"
+       # ---------------------------------------------------------------------------
+       # Allows for the definition of 1 or more hosts that are created sequentially
+       # from a template. By default, this looks like "peer%d" from 0 to Count-1.
+       # You may override the number of nodes (Count), the starting index (Start)
+       # or the template used to construct the name (Hostname).
+       #
+       # Note: Template and Specs are not mutually exclusive.  You may define both
+       # sections and the aggregate nodes will be created for you.  Take care with
+       # name collisions
+       # ---------------------------------------------------------------------------
+       # peer命名由0开始到count-1，规则是peer%d，eg：peer0，当然可以自由指定开始的节点，由Start指定
+       Template:
+         Count: 2								#我这里改成2，应该就会生成两个peer
+         # Start: 5   指定生成的节点从几开始，不指定就从0开始　peer0.org1.example.com
+         # Hostname: {{.Prefix}}{{.Index}} # default
+         # SANS:
+         #   - "{{.Hostname}}.alt.{{.Domain}}"
+         SANS:
+         	- localhost
+       Users:				# 组织中除了Admin之外还需要生成多少个用户，数量由count决定：Count: The number of user accounts _in addition_ to Admin
+         Count: 1
+   
+     - Name: Org2
+       Domain: org2.example.com
+       EnableNodeOUs: true
+       Template:
+         Count: 2
+         SANS:
+         	- localhost
+       Users:
+         Count: 1
+   
+   ```
+
+   注意：SANS一定要填节点真实的地址，不然会导致后面加入通道加不进去
+
+   然后使用以下命令生成证书：
+
+   ```shell
+    cryptogen generate --config=./crypto-config.yaml --output=organizations
+   ```
+
+   创建成功后会有以下显示
+
+   ![image-20230313161858157](assets/image-20230313161858157.png)
+
+   tree一下：
+
+   ![image-20230313162057141](assets/image-20230313162057141.png)
+
    
 
-   <font color=red>------------------------2.x和1.x配置方法有不同，还需另外学习-------------------------</font>
+   可以发现，创建了orderer组织和peer组织，并且按照之前写的yaml配置文件生成了对应的peer节点和users，以及ca、msp、tlsca
 
-   
+   <font color=blue>tlsca，tls是现在用与替换ssl的一种新的安全协议，目前HF中使用的就是tls协议</font>
+
+   <font color=red>---------------------------2.x和1.x配置方法有不同，还需另外学习------------------------------</font>
 
    > OU：organization unit组织单位
+   >
+   > 
+   >
+   > 我这里是直接在my-network目录下使用../bin cryptogen xxxxxx来调用cryptogen，为了之后更方便，把../bin直接加入环境变量：
+   >
+   > ```shell
+   > export PATH=${PWD}/../bin:${PWD}:$PATH
+   > 
+   > #将../bin加入环境变量后，再来试试，注意这里需要删除之前生成的文件
+   > #也就是要删除organizations
+   > 
+   > rm -rf organizations
+   > cryptogen generate --config=./crypto-config.yaml --output=organizations
+   > # 得到以下输出
+   > org1.example.com
+   > org2.example.com
+   > # 这下就可以直接使用cryptogen了
+   > ```
 
 3. 创世区块配置和生成
 
@@ -625,5 +724,409 @@ hyperledger网络可以有多个组织（Org）
 
    注：Fabric2.x排序类型使用EtcdRaft
 
-4. 
+   当前网络的org定义
 
+   id：就是msp id。所有操作都是通过mspid来定义，定义某个证书的名称，对应MSPDIR。
+
+   > 生成创世区块也需要一份配置文件`configtx.yaml` 我这里直接复制了`test-network/configtx/configtx.yaml`下面的
+   >
+   > ```yaml
+   > Organizations:
+   >     - &OrdererOrg
+   >         Name: OrdererOrg     # 组织名称，要与之前config文件中的名称对应
+   >         ID: OrdererMSP        # 组织id 用来引用组织   
+   >         MSPDir: organizations/ordererOrganizations/example.com/msp    # 组织的msp文件目录
+   >         Policies:         # 定义组织的一些策略
+   >             Readers:
+   >                 Type: Signature
+   >                 Rule: "OR('OrdererMSP.member')"
+   >             Writers:
+   >                 Type: Signature
+   >                 Rule: "OR('OrdererMSP.member')"
+   >             Admins:
+   >                 Type: Signature
+   >                 Rule: "OR('OrdererMSP.admin')"
+   >                 
+   >         OrdererEndpoints:
+   >             - orderer.example.com:7050
+   >             
+   >     - &Org1
+   >         Name: Org1
+   >         ID: Org1MSP
+   >         MSPDir: organizations/peerOrganizations/org1.example.com/msp
+   >         Policies:
+   >             Readers:
+   >                 Type: Signature
+   >                 Rule: "OR('Org1MSP.admin', 'Org1MSP.peer', 'Org1MSP.client')"
+   >             Writers:
+   >                 Type: Signature
+   >                 Rule: "OR('Org1MSP.admin', 'Org1MSP.client')"
+   >             Admins:
+   >                 Type: Signature
+   >                 Rule: "OR('Org1MSP.admin')"
+   >             Endorsement:
+   >                 Type: Signature
+   >                 Rule: "OR('Org1MSP.peer')"
+   >         AnchorPeers:                       # 定义组织的锚节点，当然这里也可以先不定义，原文件中并没有定义，我们之后可以再更新或者定义锚节点
+   >             - Host: peer0.org1.example.com # 锚节点的host地址
+   >               Port: 7051                   # 锚节点开放的端口号地址
+   >                  
+   >     - &Org2
+   >         Name: Org2
+   >         ID: Org2MSP
+   >         MSPDir: organizations/peerOrganizations/org2.example.com/msp
+   >         Policies:
+   >             Readers:
+   >                 Type: Signature
+   >                 Rule: "OR('Org2MSP.admin', 'Org2MSP.peer', 'Org2MSP.client')"
+   >             Writers:
+   >                 Type: Signature
+   >                 Rule: "OR('Org2MSP.admin', 'Org2MSP.client')"
+   >             Admins:
+   >                 Type: Signature
+   >                 Rule: "OR('Org2MSP.admin')"
+   >             Endorsement:
+   >                 Type: Signature
+   >                 Rule: "OR('Org2MSP.peer')"
+   >         AnchorPeers:
+   >             - Host: peer0.org2.example.com
+   >               Port: 9051
+   > 
+   > # fabric网络的能力配置部分              
+   > Capabilities:
+   >     Channel: &ChannelCapabilities           # Channel配置同时应用于orderer和peer
+   >         V2_0: true
+   >     Orderer: &OrdererCapabilities        # Orderer仅使用于orderer,无需担心升级peer     
+   >         V2_0: true
+   >     Application: &       # Application仅使用于Peer,无需担心升级Orderer   
+   >         V2_0: true
+   > 
+   > # Application配置用来定义要写入创世区块或配置交易的应用参数        
+   > Application: &ApplicationDefaults
+   >     Organizations:
+   >     Policies:
+   >         Readers:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Readers"
+   >         Writers:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Writers"
+   >         Admins:
+   >             Type: ImplicitMeta
+   >             Rule: "MAJORITY Admins"
+   >         LifecycleEndorsement:
+   >             Type: ImplicitMeta
+   >             Rule: "MAJORITY Endorsement"
+   >         Endorsement:
+   >             Type: ImplicitMeta
+   >             Rule: "MAJORITY Endorsement"
+   >     # Capabilities配置描述应用层级的能力需求
+   >     # 这里引用了 前面定义的 &ApplicationCapabilities 锚点 也就是Application的值放在这
+   >     Capabilities:
+   >         <<: *ApplicationCapabilities
+   >         
+   > # Orderer配置用来定义要编码写入创世区块或通道交易的排序节点参数       
+   > Orderer: &OrdererDefaults 
+   >     OrdererType: etcdraft      # 排序节点的类型 目前有 solo kafka EtcdRaft , 不同的类型对应不同的共识算法的实现
+   >     Addresses:     # orderer 服务的地址  
+   >         - orderer.example.com:7050
+   > 
+   >     EtcdRaft:        # EtcdRaft排序类型的配置
+   >         Consenters:
+   >         - Host: orderer.example.com
+   >           Port: 7050
+   >           ClientTLSCert: organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+   >           ServerTLSCert: organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+   >     BatchTimeout: 1s    # 区块打包的时间,到了这个时间就打包区块
+   >     BatchSize:          # 区块打包的最大包含交易数
+   >         MaxMessageCount: 10       # 一个区块里最大的交易数
+   >         AbsoluteMaxBytes: 99 MB   # 一个区块的最大字节数,任何时候都不能超过
+   >         PreferredMaxBytes: 512 KB # 一个区块的建议字节数    # 这里的配置好像没有作用目前我也不知道是啥情况
+   >         #可以根据实际情况，对上述几个数据进行调整，来优化区块链网络的处理速度
+   >     Organizations:
+   >     Policies:
+   >         Readers:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Readers"
+   >         Writers:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Writers"
+   >         Admins:
+   >             Type: ImplicitMeta
+   >             Rule: "MAJORITY Admins"
+   >         BlockValidation:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Writers"
+   > 
+   > # Channel配置用来定义要写入创世区块或配置交易的通道参数
+   > Channel: &ChannelDefaults
+   >     Policies:
+   >         Readers:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Readers"
+   >         Writers:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Writers"
+   >         Admins:
+   >             Type: ImplicitMeta
+   >             Rule: "MAJORITY Admins"
+   >     Capabilities:
+   >         <<: *ChannelCapabilities
+   >         
+   > # Profiles配置用来定义用于configtxgen工具生成创世区块或配置块的一些配置信息
+   > #以下的内容很关键，注意两个内容的命名，生成创世区块是需要的，复制的文件与以下配置不一样（可能是TwoOrgsApplicationGenesis），注意名称
+   > Profiles:
+   >     TwoOrgsOrdererGenesis:   # TwoOrgsOrdererGenesis用来生成orderer启动时所需的block,用于生成创世区块
+   >         <<: *ChannelDefaults
+   >         Orderer:
+   >             <<: *OrdererDefaults
+   >             Organizations:
+   >                 - *OrdererOrg
+   >             Capabilities:
+   >                 <<: *OrdererCapabilities
+   >         Consortiums:
+   >           # 这里定义了一个联盟 
+   >             SampleConsortium:
+   >                 Organizations:
+   >                     - *Org1
+   >                     - *Org2
+   >     # TwoOrgsChannel用来生成channel配置信息                
+   >     TwoOrgsChannel:
+   >         Consortium: SampleConsortium # 引用上面定义的联盟
+   >         <<: *ChannelDefaults
+   >         Application:
+   >             <<: *ApplicationDefaults
+   >             Organizations:
+   >                 - *Org1
+   >                 - *Org2
+   >             Capabilities:
+   >                 <<: *ApplicationCapabilities
+   > 
+   > ```
+
+   <font color=red><<: * 的操作，其实就是复制，将名称为后面跟的内容的信息复制在对应位置，避免代码冗余</font>
+
+   使用configexgen工具来生成创世区块：
+
+   ```shell
+   configtxgen -configPath ./ -profile TwoOrgsApplicationGenesis -channelID mychannel -outputBlock ./channel-artifacts/genesis.block
+   ```
+
+   <font color=red>一定要注意organizations的地址复制过来的文件，为../organizations，而当前我们创建的是./organizations</font>
+
+   还有就是Profile部分的Orderer的命名一定要在路径中使用正确
+
+   执行代码后：
+
+   ![image-20230313173800773](assets/image-20230313173800773.png)
+
+   查看最终生成的内容：
+
+   ![image-20230313173855808](assets/image-20230313173855808.png)
+
+   生成了一个创世区块，查看创世区块的内容为各个节点的公钥信息、权限等：
+
+   ```text
+   
+   " ???8?7@?;?ewSy|???? 
+   ? 
+    
+   w                                                                                                                                                                                           ???"	mychannel*@a2828664dcd7526532e97b6904878fe2a443bd0c810299d265eeaf28659591cf?B??4<En?`??? 
+   W?¤;
+   Orderer;*
+   
+   OrdererOrg*?(
+   MSP(((
+   
+   OrdererMSP?-----BEGIN CERTIFICATE-----
+   MIICPTCCAeOgAwIBAgIQcMcIX11bsTEphuoz2dUVhDAKBggqhkjOPQQDAjBpMQsw
+   CQYDVQQGEwJVUzETMBEGA1UECBMKQ2FsaWZvcm5pYTEWMBQGA1UEBxMNU2FuIEZy
+   YW5jaXNjbzEUMBIGA1UEChMLZXhh.....
+   .....
+   .....
+   .....
+   .....
+   -----END CERTIFICATE-----
+   ordererAdmins1
+   	Endpoints$ 
+   orderer.example.com:7050Admins"3
+   Writers( 
+   
+   
+   OrdererMSPAdmins"4
+   Admins* 
+   
+   OrdererMSPAdmins"3
+   Readers( 
+   
+   
+   OrdererMSPAdmins*Admins"
+   	BatchSize 
+   
+   ?? Admins 
+   
+   BatchTimeout 
+   2sAdmins 
+   ChannelRestrictionAdmins$
+   
+   Capabilities 
+   
+   V2_0Admins 
+   ConsensusTypeR?                                                                                                                                                                             etcdraft?
+    
+   orderer.example.com7??--BEGIN CERTIFICATE-----
+   MIICZDCCAgqgAwIBAgIQGNkB1l1vXVZrXjnwXz/fmTAKBggqhkjOPQQDAjBsMQsw
+   CQYDVQQGEwJVUzETMBEGA1UECBMKQ2FsaWZvcm5pYTEWMBQGA1UEBxMNU2FuIEZy
+   YW5jaXNjbzEUMBIGA1UEChMLZXhhbXBsZS5jb20xGjAYBgNVBAMTEXRsc2NhLmV4
+   YW1wbGUuY29tMB4XDTIzMDMxMzA4MjYwMFoXD.....
+   .....
+   ....
+   ....
+   .....
+    
+   500ms 
+    Admins"*                                                                                                                                                                                   	
+   WritersAdmins""                                                                                                                                                                             	
+   ReadersAdmins""                                                                                                                                                                             	
+   WritersAdmins""
+   Admins 
+   
+   AdminsAdmins*Admins? 
+   
+   Application? 
+   Org1MSP??
+   MSP?)?)°)
+   Org1MSP?----BEGIN CERTIFICATE-----
+   MIICUjCCAfegAwIBAgIQYv+L5fS92hZ5MDVAU2TxOzAKBggqhkjOPQQDAjBzMQsw
+   CQYDVQQGEwJVUzETMBEGA1UECBMKQ2FsaWZvcm5pYTEWMBQGA1UEBxMNU2FuIEZy
+   YW5jaXNjbzEZMBcGA1UEChMQb3JnMS5leGFtcGxlLmNvbTEcMBoGA1UEAxMTY2Eu
+   b3JnMS5leGFtcG....
+   .....
+   ....
+   ....
+   
+   ordererAdmins"E
+   Writers:, 
+                                                                                                                                                                                                
+   
+   Org1MSP 
+   
+   Org1MSPAdmins"1
+   Admins' 
+   
+   Org1MSPAdmins"6
+   
+   Endorsement' 
+   
+   Org1MSPAdmins"X
+   ReadersM? 
+   
+   Org1MSP 
+   
+   Org1MSP 
+   
+   Org1MSPAdmins*Admins?
+   Org2MSP??)
+   MSP?)?)?)
+   Org2MSP?-----BEGIN CERTIFICATE-----
+   ......
+   ......
+   ......
+   ......
+   ......
+   
+   ordererAdmins"X
+   ReadersM? 
+   
+   Org2MSP 
+   
+   Org2MSP 
+   
+   Org2MSPAdmins"E
+   Writers:, 
+                                                                                                                                                                                                
+   
+   Org2MSP 
+   
+   Org2MSPAdmins"1
+   Admins' 
+   
+   Org2MSPAdmins"6
+   
+   Endorsement' 
+   
+   Org2MSPAdmins*Admins$
+   
+   Capabilities 
+   
+   V2_0Admins""                                                                                                                                                                                	
+   ReadersAdmins""                                                                                                                                                                             	
+   WritersAdmins""
+   Admins 
+   
+   AdminsAdmins",
+   
+   Endorsement 
+   
+   EndorsementAdmins"5
+   LifecycleEndorsement 
+   
+   EndorsementAdmins*Admins&
+   HashingAlgorithm 
+   SHA256Admins-
+   BlockDataHashingStructur????AdminsI
+   OrdererAddresses5 
+   orderer.example.com:7050/Channel/Orderer/Admins$
+   
+   Capabilities 
+   
+   V2_0Admins""
+   Admins 
+   
+   AdminsAdmins""                                                                                                                                                                              	
+   ReadersAdmins""                                                                                                                                                                             	
+   WritersAdmins*Admins 
+   
+   ```
+
+   ![image-20230313174516458](assets/image-20230313174516458.png)
+
+4. 配置channel，相当于是创建了一个“群组”，可以允许或踢出组织
+
+   
+
+5. 生成锚节点
+
+6. 启动“电脑”：docker-compose启动网络
+
+   配置文件`docker-compose-cli.yaml`
+
+   `docker-compose -f {{配置文件名}} up -d`--这里的配置文件名就是：`docker-compose-cli.yaml`
+
+   注意启动如果报：error：invalid reference format
+
+   warning：The image_tag variable is not set....
+
+   问题在于没有指定镜像版本号，需要配置环境变量
+
+   ```shell
+   export IMAGE_TAG=latest
+   ```
+
+   如果有warning：the compose_project_name variable is not set.....
+
+   没有指定compose名字：
+
+   ```shell
+   export COMPOSE_PROJECT_NAME={{随意什么名字}}
+   ```
+
+   然后重新启动
+
+7. 创建channel（启动channel）
+
+8. 
+
+### 参考来源
+
+1.https://blog.csdn.net/weixin_45167493/article/details/116200183：Fabric2.2.1从零开始搭建网络(非脚本)
