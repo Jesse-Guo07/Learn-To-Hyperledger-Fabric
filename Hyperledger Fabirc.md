@@ -767,7 +767,7 @@ hyperledger网络可以有多个组织（Org）
    >             Endorsement:
    >                 Type: Signature
    >                 Rule: "OR('Org1MSP.peer')"
-   >         AnchorPeers:                       # 定义组织的锚节点，当然这里也可以先不定义，原文件中并没有定义，我们之后可以再更新或者定义锚节点
+   >         AnchorPeers:                       # 定义组织的锚节点，原文件中并没有定义，如果没有定义之后更新锚节点就无法找到原有的锚节点，可能需要其他方法来定义
    >             - Host: peer0.org1.example.com # 锚节点的host地址
    >               Port: 7051                   # 锚节点开放的端口号地址
    >                  
@@ -876,20 +876,28 @@ hyperledger网络可以有多个组织（Org）
    > # Profiles配置用来定义用于configtxgen工具生成创世区块或配置块的一些配置信息
    > #以下的内容很关键，注意两个内容的命名，生成创世区块是需要的，复制的文件与以下配置不一样（可能是TwoOrgsApplicationGenesis），注意名称
    > Profiles:
-   >     TwoOrgsOrdererGenesis:   # TwoOrgsOrdererGenesis用来生成orderer启动时所需的block,用于生成创世区块
+   >     
+   >     TwoOrgsApplicationGenesis:
+   >     # 用来生成orderer启动时所需的block,用于生成创世区块
    >         <<: *ChannelDefaults
    >         Orderer:
    >             <<: *OrdererDefaults
    >             Organizations:
    >                 - *OrdererOrg
-   >             Capabilities:
-   >                 <<: *OrdererCapabilities
+   >             Capabilities: *OrdererCapabilities
+   >         Application:
+   >             <<: *ApplicationDefaults
+   >             Organizations:
+   >                 - *Org1
+   >                 - *Org2
+   >             Capabilities: *ApplicationCapabilities
    >         Consortiums:
    >           # 这里定义了一个联盟 
    >             SampleConsortium:
    >                 Organizations:
    >                     - *Org1
    >                     - *Org2
+   > 
    >     # TwoOrgsChannel用来生成channel配置信息                
    >     TwoOrgsChannel:
    >         Consortium: SampleConsortium # 引用上面定义的联盟
@@ -1093,15 +1101,298 @@ hyperledger网络可以有多个组织（Org）
 
 4. 配置channel，相当于是创建了一个“群组”，可以允许或踢出组织
 
+   需要一个.tx文件，生成通道交易配置
+
+   ```shell
+   configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputCreateChannelTx ./channel-artifacts/mychannel.tx
+   ```
+
+   使用以上命令在channel-artifacts下生成一个mychannel.tx文件
+
+   此时，该目录结构为：
+
+   ![image-20230315154627978](assets/image-20230315154627978.png)
+
+   查看.tx文件可以看到
+
+   ![image-20230315154801996](assets/image-20230315154801996.png)
+
    
 
-5. 生成锚节点
+5. 更新锚节点
+
+   ```shell
+   # 以Org1的为例，注意-asOrg 后跟的Org1MSP是配置文件中的MSP的ID，一定要对应否则会报：Error on inspectChannelCreateTx: org with name 'Org1' does not exist in config
+   configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputAnchorPeersUpdate ./channel-artifacts/Org1MSPanchors.tx -asOrg Org1MSP
+   ```
+
+   然后会打印：
+
+   ![image-20230315161138211](assets/image-20230315161138211.png)
+
+   同理更新Org2MSP的，这样锚节点就更新好了。
+
+   当前channel-artifacts目录：
+
+   ![image-20230315161550924](assets/image-20230315161550924.png)
 
 6. 启动“电脑”：docker-compose启动网络
 
-   配置文件`docker-compose-cli.yaml`
+   配置文件`docker-compose-cli.yaml`（在test-network里base为：`compose-test-net.yaml`，先将其拷贝至当前目录）
 
-   `docker-compose -f {{配置文件名}} up -d`--这里的配置文件名就是：`docker-compose-cli.yaml`
+   修改命名文件为`compose-mynet.yaml`
+
+   由于我们生成的是每个组织两个peer，所以需要修改对应的配置信息，特别注意的是organizations ... 的路径，一定要修改至匹配的路径。
+
+   ```yaml
+   
+   #
+   
+   version: '3.7'
+   
+   volumes:
+     orderer.example.com:
+     peer0.org1.example.com:
+     peer1.org1.example.com:
+     peer0.org2.example.com:
+     peer1.org2.example.com:
+   
+   networks:
+     test:
+       name: fabric_mynet
+   
+   services:
+   
+     orderer.example.com:
+       container_name: orderer.example.com
+       image: hyperledger/fabric-orderer:latest
+       labels:
+         service: hyperledger-fabric
+       environment:
+         - FABRIC_LOGGING_SPEC=INFO
+         - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+         - ORDERER_GENERAL_LISTENPORT=7050
+         - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+         - ORDERER_GENERAL_LOCALMSPDIR=/var/hyperledger/orderer/msp
+         # enabled TLS
+         - ORDERER_GENERAL_TLS_ENABLED=true
+         - ORDERER_GENERAL_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+         - ORDERER_GENERAL_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+         - ORDERER_GENERAL_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+         - ORDERER_GENERAL_CLUSTER_CLIENTCERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+         - ORDERER_GENERAL_CLUSTER_CLIENTPRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+         - ORDERER_GENERAL_CLUSTER_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+         - ORDERER_GENERAL_BOOTSTRAPMETHOD=none
+         - ORDERER_CHANNELPARTICIPATION_ENABLED=true
+         - ORDERER_ADMIN_TLS_ENABLED=true
+         - ORDERER_ADMIN_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+         - ORDERER_ADMIN_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+         - ORDERER_ADMIN_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+         - ORDERER_ADMIN_TLS_CLIENTROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+         - ORDERER_ADMIN_LISTENADDRESS=0.0.0.0:7053
+         - ORDERER_OPERATIONS_LISTENADDRESS=orderer.example.com:9443
+         - ORDERER_METRICS_PROVIDER=prometheus
+       working_dir: /root
+       command: orderer
+       volumes:
+           - ./organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp:/var/hyperledger/orderer/msp
+           - ./organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/:/var/hyperledger/orderer/tls
+           - orderer.example.com:/var/hyperledger/production/orderer
+       ports:
+         - 7050:7050
+         - 7053:7053
+         - 9443:9443
+       networks:
+         - test
+   
+     peer0.org1.example.com:
+       container_name: peer0.org1.example.com
+         - CORE_PEER_TLS_ENABLED=true
+         - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+         - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+         - CORE_PEER_ADDRESS=peer0.org1.example.com:7051
+         - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7052
+         - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org1.example.com:7051
+         - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org1.example.com:7051
+         - CORE_PEER_LOCALMSPID=Org1MSP
+         - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+         - CORE_OPERATIONS_LISTENADDRESS=peer0.org1.example.com:9444
+         - CORE_METRICS_PROVIDER=prometheus
+         - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer0org1"}
+           - ./organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com:/etc/hyperledger/fabric
+           - peer0.org1.example.com:/var/hyperledger/production
+       working_dir: /root
+           - peer0.org1.example.com:/var/hyperledger/production
+       working_dir: /root
+       command: peer node start
+       ports:
+         - 7051:7051
+         - 9444:9444
+       networks:
+         - test
+   
+     peer0.org1.example.com:
+         - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+       volumes:
+           - ./organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com:/etc/hyperledger/fabric
+           - peer0.org1.example.com:/var/hyperledger/production
+       working_dir: /root
+       command: peer node start
+       ports:
+         - 7051:7051
+         - 9444:9444
+       networks:
+         - test
+   
+     peer1.org1.example.com:
+       container_name: peer1.org1.example.com
+       image: hyperledger/fabric-peer:latest
+       labels:
+         service: hyperledger-fabric
+       environment:
+         - FABRIC_CFG_PATH=/etc/hyperledger/peercfg
+         - FABRIC_LOGGING_SPEC=INFO
+         #- FABRIC_LOGGING_SPEC=DEBUG
+         - CORE_PEER_TLS_ENABLED=true
+         - CORE_PEER_PROFILE_ENABLED=false
+         - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+         - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+         - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+         # Peer specific variables
+         - CORE_PEER_ID=peer1.org1.example.com
+         - CORE_PEER_ADDRESS=peer1.org1.example.com:7057
+         - CORE_PEER_LISTENADDRESS=0.0.0.0:7057
+         - CORE_PEER_CHAINCODEADDRESS=peer1.org1.example.com:7058
+         - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7058
+         - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.org1.example.com:7057
+         - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org1.example.com:7057
+         - CORE_PEER_LOCALMSPID=Org1MSP
+         - CORE_PEER_CHAINCODEADDRESS=peer1.org1.example.com:7058
+         - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7058
+         - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.org1.example.com:7057
+         - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org1.example.com:7057
+         - CORE_PEER_LOCALMSPID=Org1MSP
+         - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+         - CORE_OPERATIONS_LISTENADDRESS=peer1.org1.example.com:9445
+         - CORE_METRICS_PROVIDER=prometheus
+         - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer1org1"}
+         - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+       volumes:
+           - ./organizations/peerOrganizations/org1.example.com/peers/peer1.org1.example.com:/etc/hyperledger/fabric
+           - peer1.org1.example.com:/var/hyperledger/production
+       working_dir: /root
+       command: peer node start
+         - CORE_PEER_LISTENADDRESS=0.0.0.0:7057
+         - CORE_PEER_CHAINCODEADDRESS=peer1.org1.example.com:7058
+         - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7058
+         - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.org1.example.com:7057
+         - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org1.example.com:7057
+         - CORE_PEER_LOCALMSPID=Org1MSP
+         - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+         - CORE_OPERATIONS_LISTENADDRESS=peer1.org1.example.com:9446
+         - CORE_METRICS_PROVIDER=prometheus
+         - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer1org1"}
+         - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+       volumes:
+           - ./organizations/peerOrganizations/org1.example.com/peers/peer1.org1.example.com:/etc/hyperledger/fabric
+           - peer1.org1.example.com:/var/hyperledger/production
+       working_dir: /root
+       command: peer node start
+       ports:
+         - 7057:7057
+         - 9446:9446
+       networks:
+         - test
+   
+         - FABRIC_CFG_PATH=/etc/hyperledger/peercfg
+         - FABRIC_LOGGING_SPEC=INFO
+         - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+         - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+         # Peer specific variables
+         - CORE_PEER_ID=peer0.org2.example.com
+         - CORE_PEER_CHAINCODEADDRESS=peer0.org2.example.com:9052
+         - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:9052
+         - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org2.example.com:9051
+         - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org2.example.com:9051
+         - CORE_PEER_LOCALMSPID=Org2MSP
+         - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+         - CORE_OPERATIONS_LISTENADDRESS=peer0.org2.example.com:9445
+         - CORE_METRICS_PROVIDER=prometheus
+       volumes:
+       working_dir: /root
+         - 9051:9051
+         - 9445:9445
+       networks:
+         - test
+   
+     peer1.org2.example.com:
+       container_name: peer1.org2.example.com
+       image: hyperledger/fabric-peer:latest
+       labels:
+         service: hyperledger-fabric
+       environment:
+         - FABRIC_CFG_PATH=/etc/hyperledger/peercfg
+         - FABRIC_LOGGING_SPEC=INFO
+         #- FABRIC_LOGGING_SPEC=DEBUG
+         - CORE_PEER_TLS_ENABLED=true
+         - CORE_PEER_PROFILE_ENABLED=false
+         - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+         - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+         - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+         # Peer specific variables
+         - CORE_PEER_ID=peer1.org2.example.com
+         - CORE_PEER_ADDRESS=peer1.org2.example.com:9057
+         - CORE_PEER_LISTENADDRESS=0.0.0.0:9057
+         - CORE_PEER_CHAINCODEADDRESS=peer1.org2.example.com:9058
+         - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:9058
+         - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org2.example.com:9057
+         - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.org2.example.com:9057
+         - CORE_PEER_LOCALMSPID=Org2MSP
+         - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+         - CORE_OPERATIONS_LISTENADDRESS=peer1.org2.example.com:9447
+         - CORE_METRICS_PROVIDER=prometheus
+         - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer1org2"}
+         - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+       volumes:
+           - ./organizations/peerOrganizations/org2.example.com/peers/peer1.org2.example.com:/etc/hyperledger/fabric
+           - peer1.org2.example.com:/var/hyperledger/production
+       working_dir: /root
+       command: peer node start
+       ports:
+         - 9057:9057
+         - 9447:9447
+       networks:
+         - test
+   
+   
+     cli:
+       container_name: cli
+       image: hyperledger/fabric-tools:latest
+       labels:
+         service: hyperledger-fabric
+       tty: true
+       stdin_open: true
+       environment:
+         - GOPATH=/opt/gopath
+         - FABRIC_LOGGING_SPEC=INFO
+         - FABRIC_CFG_PATH=/etc/hyperledger/peercfg
+         #- FABRIC_LOGGING_SPEC=DEBUG
+       working_dir: /opt/gopath/src/github.com/hyperledger/fabric/peer
+       command: /bin/bash
+       volumes:
+           - ./organizations:/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations
+           - ./scripts:/opt/gopath/src/github.com/hyperledger/fabric/peer/scripts/
+       depends_on:
+         - peer0.org1.example.com
+         - peer1.org1.example.com
+         - peer0.org2.example.com
+         - peer1.org2.example.com
+       networks:
+         - test
+   
+   ```
+
+   `docker-compose -f {{配置文件名}} up -d`--这里的配置文件名就是：`compose-mynet.yaml`
 
    注意启动如果报：error：invalid reference format
 
@@ -1122,6 +1413,14 @@ hyperledger网络可以有多个组织（Org）
    ```
 
    然后重新启动
+
+   启动成功后：
+
+   ![image-20230315173422261](assets/image-20230315173422261.png)
+
+   docker ps -a查看已经创建的容器：
+
+   ![image-20230315173458243](assets/image-20230315173458243.png)
 
 7. 创建channel（启动channel）
 
