@@ -385,7 +385,9 @@ b6b117c81c7f   hyperledger/fabric-peer:latest      "peer node start"   2 seconds
 
 `./network.sh down`是关闭当前网络，并且释放容器
 
-在通道上启动chaincode：`./network.sh deployCC -ccn basic -ccp ../asset-transfer-basic/chaincode-go -ccl go`
+<a name="chaincode-go">在通道上启动chaincode</a>：`./network.sh deployCC -ccn basic -ccp ../asset-transfer-basic/chaincode-go -ccl go`
+
+([手动创建网络使用go](#chaincode-mycc-nodejs))
 
 注意：可能会出现以下报错：
 
@@ -1422,9 +1424,75 @@ hyperledger网络可以有多个组织（Org）
 
    ![image-20230315173458243](assets/image-20230315173458243.png)
 
-7. 创建channel（启动channel）
+7. <a name=chaincode-mycc-nodejs>chaincode部署</a>
 
-8. 
+   以fabric的asset-transfer-basic/chaincode-go为例（这里是具体的命令行）
+
+   `peer lifecycle chaincode package basic.tar.gz --path ./chaincode-go --lang golang --label basic_1`
+
+   对比[之前测试网络使用go的案例](#chaincode-go)，此代码属于具体的命令行，前面的是使用bash脚本，需要按照设置的规范写入对应的参数，具体代码可以查看`test-network/scripts/deployCC.sh`
+
+8. 安装
+
+9. 关闭网络
+
+   关闭整个网络需要删除所有的容器，为了方便这里可以直接使用test-network里的network.sh脚本down掉所有的容器
+
+### chaincode编写（node.js）
+
+使用node.js编写chaincode：
+
+- 安装node.js：`apt-get install nodejs`
+
+- 在/fabric-samples/chaincode下创建一个目录，自由命名：我命名为mycc
+
+- 进入mycc，初始化node.js工程：`npm init`，可能安装nodejs后没有安装npm，没安装的话，apt-get install npm就行了，init后，出现选项，一直回车就行，或者按照内容自行填写。最后会在mycc下生成一个json：![image-20230320101634270](assets/image-20230320101634270.png)
+
+- 修改packag.json，将"test"，修改为"start"，最终命令为start，并且将命令内容改为`"node 文件名.js"`:![image-20230320101958568](assets/image-20230320101958568.png)
+
+- 根据命名文件，创建对应的js文件，例如这里`touch myccTest.js`
+
+- 编辑`touch myccTest.js`，根据官方文档修改[Hyperledger Fabric SDK for node.js Index](https://hyperledger.github.io/fabric-chaincode-node/release-2.2/api/)或者参考[fabric-shim - npm (npmjs.com)](https://www.npmjs.com/package/fabric-shim)（因为我们需要使用fabric-shim）
+
+  1. ​	使用：`npm install --save fabric-shim`
+
+     安装完成后得到：
+
+     ![image-20230320102601577](assets/image-20230320102601577.png)
+
+  2. 现在查看package.js，可以看到有了dependencies，并且当前目录多了一个文件夹`node_modules`和一个文件`package-lock.json`![image-20230320102733007](assets/image-20230320102733007.png)
+
+     ![image-20230320102950606](assets/image-20230320102950606.png)
+
+     `node_modules`下有很多的依赖接口
+
+     ![image-20230320103133687](assets/image-20230320103133687.png)
+
+  3. 接下来可以开始编写代码了，依然参考上述文档
+
+     <font color=red>注意：在编写智能合约的时候，不应该把生成随机数和访问网络的需求写入智能合约里，因为不同的节点生成随机数的值可能不一样，例如orderer节点生成的随机数如果和peer节点不同，那么将无法通过验证，则无法上链。对于有网络请求和生成随机数需求的项目，应该在调用智能合约之前完成，以最终固定的值的形式传入智能合约</font>
+
+     
+
+### 开发者环境搭建
+
+为了避免每次编写chaincode后调试需要`关闭网络-重新启动网络创建容器-创建channel-配置节点环境变量-安装部署链码-实例化链码-调用`，可以搭建一个nodejs开发环境，减少工作量。
+
+##### 修改docker-compose cli的yaml文件
+
+之前在本次项目中创建的yaml文件名为`compose-mynet.yaml`，所以应该修改compose-mynet.yaml的内容。
+
+<font color=red>注意：yaml文件，空格一定要对齐，否则可能导致节点跑不起来</font>
+
+- 指定`command: peer node start --peer-chaincodedev`，参考：[peer node — hyperledger-fabricdocs master 文档](https://hyperledger-fabric.readthedocs.io/zh_CN/latest/commands/peernode.html?highlight=chaincodedev#peer-node-start)，这样使得peer节点在链码开发者模式下启动![image-20230320162643875](assets/image-20230320162643875.png)
+
+- 在配置节点信息的时候，我们配置了两个端口，以peer0 in org1为例：
+
+  ![image-20230320162951148](assets/image-20230320162951148.png)
+
+  这是因为传输时使用了tls协议，这要求我们需要使用两个端口，所以在配置的时候有一个步骤是关于tls证书的，但是在业务开发过程中，对安全性要求没那么高，所以可以不需要，方法就是在两个端口之间加入一个端口
+
+- 
 
 ### 参考来源
 
