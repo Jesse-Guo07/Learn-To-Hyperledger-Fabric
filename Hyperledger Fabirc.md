@@ -605,11 +605,19 @@ hyperledger网络可以有多个组织（Org）
 
 ### 手动End-2-End测试（手动创建网络）
 
+| 文件名                                  | 文件类型                     | 文件作用                                                     |
+| --------------------------------------- | ---------------------------- | ------------------------------------------------------------ |
+| [crypto-config.yaml](#cryptoconfig)     | yaml配置文件                 | 用于定义组织（Orgs）、Orderer、peer节点、用户数量；使用cryptogen可以生成模板配置文件 |
+| [organizations](#organizations)         | 文件夹                       | 通过使用crypto-config.yaml生成，用于存放各个节点的公钥、ca证书、tls等相关信息 |
+| [configtx.yaml](#configtx)              | yaml配置文件                 | 配置各个节点具体信息，包括mspid、org的策略和锚节点、网络的能力配置、applications的策略（用来配置写入创世区块的参数）、orderer使用的排序配置、channel的配置信息、策略等 |
+| [channel-artifacts](#channel-artifacts) | 文件夹                       | 用于存放创世区块(也可以自己定义在其他文件夹，参考创建创世区块的具体命令行代码)、channel信息、各个org的锚节点信息等 |
+| [compose-mynet.yaml](#compose-mynet)    | yaml配置文件(docker-compose) | docker-compose配置文件，用于配置各个节点容器的相关信息，包括镜像、环境、端口映射、网络等信息 |
+
 1. 创建文件夹my-network：定义who is who
 
    在./fabric-samples下`mkdir my-network`
 
-2. 配置文件
+2. <a name='cryptoconfig'>配置文件</a>
 
    定义组织（Orgs）、Orderer（可以定义多个）、用户数量
 
@@ -627,10 +635,11 @@ hyperledger网络可以有多个组织（Org）
    
      - Name: Orderer 								#组织名
        Domain: example.com							#组织的域名
-       EnableNodeOUs: false						#设置了EnableNodeOUs，会在map下生成config.yaml文件，OU：组织单元，模板生成的是false，我
+       EnableNodeOUs: false						#设置了EnableNodeOUs，会在map下生成config.yaml文件，OU：组织单元，模板生成的是false
        Specs:
-         - Hostname: orderer						# 生成的证书文件会以{{Hostname}}.{{Domain}}呈现　当前的文件名就是
-         - localhost								# orderer.example.com
+         - Hostname: orderer						# 生成的证书文件会以{{Hostname}}.{{Domain}}呈现
+           SANS:
+         	  - localhost								# orderer.example.com
    
    
    PeerOrgs:									# 每个peer组织配置（机构）
@@ -678,10 +687,10 @@ hyperledger网络可以有多个组织（Org）
 
    注意：SANS一定要填节点真实的地址，不然会导致后面加入通道加不进去
 
-   然后使用以下命令生成证书：
+   <a name='organizations'>然后使用以下命令生成证书：</a>
 
    ```shell
-    cryptogen generate --config=./crypto-config.yaml --output=organizations
+   cryptogen generate --config=./crypto-config.yaml --output=organizations
    ```
 
    创建成功后会有以下显示
@@ -720,7 +729,7 @@ hyperledger网络可以有多个组织（Org）
    > # 这下就可以直接使用cryptogen了
    > ```
 
-3. 创世区块配置和生成
+3. <a name='configtx'>创世区块配置和生成</a>
 
    在创世区块里，写入初始参与者所有用户的信息，这样后来加入的用户则无法修改msp中相关信息。（由Hash指向区块）黑客创造一个假的peer节点，没有大家的数字签名证书，则无法与其他节点通讯。
 
@@ -735,7 +744,7 @@ hyperledger网络可以有多个组织（Org）
    > ```yaml
    > Organizations:
    >     - &OrdererOrg
-   >         Name: OrdererOrg     # 组织名称，要与之前config文件中的名称对应
+   >         Name: Orderer     # 组织名称，要与之前config文件中的名称对应，一定一定得一致
    >         ID: OrdererMSP        # 组织id 用来引用组织   
    >         MSPDir: organizations/ordererOrganizations/example.com/msp    # 组织的msp文件目录
    >         Policies:         # 定义组织的一些策略
@@ -916,7 +925,7 @@ hyperledger网络可以有多个组织（Org）
 
    <font color=red><<: * 的操作，其实就是复制，将名称为后面跟的内容的信息复制在对应位置，避免代码冗余</font>
 
-   使用configexgen工具来生成创世区块：
+   <a name='channel-artifacts'>使用configexgen工具来生成创世区块：</a>
 
    ```shell
    configtxgen -configPath ./ -profile TwoOrgsApplicationGenesis -channelID mychannel -outputBlock ./channel-artifacts/genesis.block
@@ -1138,7 +1147,15 @@ hyperledger网络可以有多个组织（Org）
 
    ![image-20230315161550924](assets/image-20230315161550924.png)
 
-6. 启动“电脑”：docker-compose启动网络
+6. 生成channel
+
+   ```shell
+   peer channel create -o localhost:7050  --ordererTLSHostnameOverride orderer.example.com -c mychannel -f ./channel-artifacts/mychannel.tx --outputBlock ./channel-artifacts/mychannel.block --tls --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+   ```
+
+   
+
+7. <a name='compose-mynet'>启动“电脑”：docker-compose启动网络</a>
 
    配置文件`docker-compose-cli.yaml`（在test-network里base为：`compose-test-net.yaml`，先将其拷贝至当前目录）
 
@@ -1147,8 +1164,6 @@ hyperledger网络可以有多个组织（Org）
    由于我们生成的是每个组织两个peer，所以需要修改对应的配置信息，特别注意的是organizations ... 的路径，一定要修改至匹配的路径。
 
    ```yaml
-   
-   #
    
    version: '3.7'
    
@@ -1196,7 +1211,7 @@ hyperledger网络可以有多个组织（Org）
          - ORDERER_METRICS_PROVIDER=prometheus
        working_dir: /root
        command: orderer
-       volumes:
+       volumes:   #磁盘的挂载，:前为真实主机的路径，之后为容器里的位置
            - ./organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp:/var/hyperledger/orderer/msp
            - ./organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/:/var/hyperledger/orderer/tls
            - orderer.example.com:/var/hyperledger/production/orderer
@@ -1209,10 +1224,23 @@ hyperledger网络可以有多个组织（Org）
    
      peer0.org1.example.com:
        container_name: peer0.org1.example.com
+       image: hyperledger/fabric-peer:latest
+       labels:
+         service: hyperledger-fabric
+       environment:
+         - FABRIC_CFG_PATH=/etc/hyperledger/peercfg
+         - FABRIC_LOGGING_SPEC=INFO
+         #- FABRIC_LOGGING_SPEC=DEBUG
          - CORE_PEER_TLS_ENABLED=true
+         - CORE_PEER_PROFILE_ENABLED=false
+         - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
          - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
          - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+         # Peer specific variables
+         - CORE_PEER_ID=peer0.org1.example.com
          - CORE_PEER_ADDRESS=peer0.org1.example.com:7051
+         - CORE_PEER_LISTENADDRESS=0.0.0.0:7051
+         - CORE_PEER_CHAINCODEADDRESS=peer0.org1.example.com:7052
          - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7052
          - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org1.example.com:7051
          - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org1.example.com:7051
@@ -1221,23 +1249,11 @@ hyperledger网络可以有多个组织（Org）
          - CORE_OPERATIONS_LISTENADDRESS=peer0.org1.example.com:9444
          - CORE_METRICS_PROVIDER=prometheus
          - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer0org1"}
-           - ./organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com:/etc/hyperledger/fabric
-           - peer0.org1.example.com:/var/hyperledger/production
-       working_dir: /root
-           - peer0.org1.example.com:/var/hyperledger/production
-       working_dir: /root
-       command: peer node start
-       ports:
-         - 7051:7051
-         - 9444:9444
-       networks:
-         - test
-   
-     peer0.org1.example.com:
          - CORE_CHAINCODE_EXECUTETIMEOUT=300s
        volumes:
            - ./organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com:/etc/hyperledger/fabric
            - peer0.org1.example.com:/var/hyperledger/production
+           - ../config/:/etc/hyperledger/peercfg
        working_dir: /root
        command: peer node start
        ports:
@@ -1269,27 +1285,6 @@ hyperledger网络可以有多个组织（Org）
          - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.org1.example.com:7057
          - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org1.example.com:7057
          - CORE_PEER_LOCALMSPID=Org1MSP
-         - CORE_PEER_CHAINCODEADDRESS=peer1.org1.example.com:7058
-         - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7058
-         - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.org1.example.com:7057
-         - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org1.example.com:7057
-         - CORE_PEER_LOCALMSPID=Org1MSP
-         - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
-         - CORE_OPERATIONS_LISTENADDRESS=peer1.org1.example.com:9445
-         - CORE_METRICS_PROVIDER=prometheus
-         - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer1org1"}
-         - CORE_CHAINCODE_EXECUTETIMEOUT=300s
-       volumes:
-           - ./organizations/peerOrganizations/org1.example.com/peers/peer1.org1.example.com:/etc/hyperledger/fabric
-           - peer1.org1.example.com:/var/hyperledger/production
-       working_dir: /root
-       command: peer node start
-         - CORE_PEER_LISTENADDRESS=0.0.0.0:7057
-         - CORE_PEER_CHAINCODEADDRESS=peer1.org1.example.com:7058
-         - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7058
-         - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.org1.example.com:7057
-         - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org1.example.com:7057
-         - CORE_PEER_LOCALMSPID=Org1MSP
          - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
          - CORE_OPERATIONS_LISTENADDRESS=peer1.org1.example.com:9446
          - CORE_METRICS_PROVIDER=prometheus
@@ -1298,6 +1293,7 @@ hyperledger网络可以有多个组织（Org）
        volumes:
            - ./organizations/peerOrganizations/org1.example.com/peers/peer1.org1.example.com:/etc/hyperledger/fabric
            - peer1.org1.example.com:/var/hyperledger/production
+           - ../config/:/etc/hyperledger/peercfg #超级大坑！！！！！！
        working_dir: /root
        command: peer node start
        ports:
@@ -1306,22 +1302,41 @@ hyperledger网络可以有多个组织（Org）
        networks:
          - test
    
+     peer0.org2.example.com:
+       container_name: peer0.org2.example.com
+       image: hyperledger/fabric-peer:latest
+       labels:
+         service: hyperledger-fabric
+       environment:
          - FABRIC_CFG_PATH=/etc/hyperledger/peercfg
          - FABRIC_LOGGING_SPEC=INFO
+         #- FABRIC_LOGGING_SPEC=DEBUG
+         - CORE_PEER_TLS_ENABLED=true
+         - CORE_PEER_PROFILE_ENABLED=false
+         - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
          - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
          - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
          # Peer specific variables
          - CORE_PEER_ID=peer0.org2.example.com
+         - CORE_PEER_ADDRESS=peer0.org2.example.com:9051
+         - CORE_PEER_LISTENADDRESS=0.0.0.0:9051
          - CORE_PEER_CHAINCODEADDRESS=peer0.org2.example.com:9052
          - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:9052
          - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org2.example.com:9051
          - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org2.example.com:9051
          - CORE_PEER_LOCALMSPID=Org2MSP
-         - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+         - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp      
          - CORE_OPERATIONS_LISTENADDRESS=peer0.org2.example.com:9445
          - CORE_METRICS_PROVIDER=prometheus
+         - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer0org2"}
+         - CORE_CHAINCODE_EXECUTETIMEOUT=300s
        volumes:
+           - ./organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com:/etc/hyperledger/fabric
+           - peer0.org2.example.com:/var/hyperledger/production
+           - ../config/:/etc/hyperledger/peercfg
        working_dir: /root
+       command: peer node start
+       ports:
          - 9051:9051
          - 9445:9445
        networks:
@@ -1358,6 +1373,7 @@ hyperledger网络可以有多个组织（Org）
        volumes:
            - ./organizations/peerOrganizations/org2.example.com/peers/peer1.org2.example.com:/etc/hyperledger/fabric
            - peer1.org2.example.com:/var/hyperledger/production
+           - ../config/:/etc/hyperledger/peercfg
        working_dir: /root
        command: peer node start
        ports:
@@ -1420,11 +1436,21 @@ hyperledger网络可以有多个组织（Org）
 
    ![image-20230315173422261](assets/image-20230315173422261.png)
 
-   docker ps -a查看已经创建的容器：
+   docker ps 查看已经创建并运行的容器：
 
-   ![image-20230315173458243](assets/image-20230315173458243.png)
+   ![image-20230321174131311](assets/image-20230321174131311.png)
 
-7. <a name=chaincode-mycc-nodejs>chaincode部署</a>
+   <font color=red>这里有一个大坑：</font>
+
+   <font color=red>当你使用复制compose-test-net的配置文件正常docker-compose启动时（不使用-d，观察日志），你可能会发现四个peer都没法启动，创建好之后就退出了，报错FABRIC_CFG_PATH    /etc/hyperledger/peercfg不存在，进入cli容器（此时也只能进入cli）之后发现并没有peercfg文件夹</font>
+
+   查阅官方文档：（根据前面测试网络，在使用peer命令时，还需要先执行`export PATH=${PWD}/../bin:$PATH`）
+
+   ![image-20230321174730807](assets/image-20230321174730807.png)
+
+   这里说明我们后面要使用peer命令又必须得要这个环境变量，这里就直接在compose配置文件中将../config挂载在对应的路径，参考上面的文件内容（大坑）。
+
+8. <a name=chaincode-mycc-nodejs>chaincode部署</a>
 
    以fabric的asset-transfer-basic/chaincode-go为例（这里是具体的命令行）
 
@@ -1432,9 +1458,9 @@ hyperledger网络可以有多个组织（Org）
 
    对比[之前测试网络使用go的案例](#chaincode-go)，此代码属于具体的命令行，前面的是使用bash脚本，需要按照设置的规范写入对应的参数，具体代码可以查看`test-network/scripts/deployCC.sh`
 
-8. 安装
+9. 安装
 
-9. 关闭网络
+10. 关闭网络
 
    关闭整个网络需要删除所有的容器，为了方便这里可以直接使用test-network里的network.sh脚本down掉所有的容器
 
@@ -1492,7 +1518,8 @@ hyperledger网络可以有多个组织（Org）
 
   这是因为传输时使用了tls协议，这要求我们需要使用两个端口，所以在配置的时候有一个步骤是关于tls证书的，但是在业务开发过程中，对安全性要求没那么高，所以可以不需要，方法就是在两个端口之间加入一个端口
 
-- 
+
+
 
 ### 参考来源
 
