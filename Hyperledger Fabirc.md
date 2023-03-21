@@ -1134,7 +1134,7 @@ hyperledger网络可以有多个组织（Org）
 
    ```shell
    # 以Org1的为例，注意-asOrg 后跟的Org1MSP是配置文件中的MSP的ID，一定要对应否则会报：Error on inspectChannelCreateTx: org with name 'Org1' does not exist in config
-   configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputAnchorPeersUpdate ./channel-artifacts/Org1MSPanchors.tx -asOrg Org1MSP
+   configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputAnchorPeersUpdate ./channel-artifacts/Org1MSPanchors.tx -asOrg Org1
    ```
 
    然后会打印：
