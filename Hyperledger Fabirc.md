@@ -613,6 +613,8 @@ hyperledger网络可以有多个组织（Org）
 | [channel-artifacts](#channel-artifacts) | 文件夹                       | 用于存放创世区块(也可以自己定义在其他文件夹，参考创建创世区块的具体命令行代码)、channel信息、各个org的锚节点信息等 |
 | [compose-mynet.yaml](#compose-mynet)    | yaml配置文件(docker-compose) | docker-compose配置文件，用于配置各个节点容器的相关信息，包括镜像、环境、端口映射、网络等信息 |
 
+[使用以上文件的完整命令行](#wanzheng)
+
 1. 创建文件夹my-network：定义who is who
 
    在./fabric-samples下`mkdir my-network`
@@ -1147,15 +1149,7 @@ hyperledger网络可以有多个组织（Org）
 
    ![image-20230315161550924](assets/image-20230315161550924.png)
 
-6. 生成channel
-
-   ```shell
-   peer channel create -o localhost:7050  --ordererTLSHostnameOverride orderer.example.com -c mychannel -f ./channel-artifacts/mychannel.tx --outputBlock ./channel-artifacts/mychannel.block --tls --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
-   ```
-
-   
-
-7. <a name='compose-mynet'>启动“电脑”：docker-compose启动网络</a>
+6. <a name='compose-mynet'>启动“电脑”：docker-compose启动网络</a>
 
    配置文件`docker-compose-cli.yaml`（在test-network里base为：`compose-test-net.yaml`，先将其拷贝至当前目录）
 
@@ -1449,6 +1443,58 @@ hyperledger网络可以有多个组织（Org）
    ![image-20230321174730807](assets/image-20230321174730807.png)
 
    这里说明我们后面要使用peer命令又必须得要这个环境变量，这里就直接在compose配置文件中将../config挂载在对应的路径，参考上面的文件内容（大坑）。
+
+7. 生成channel
+
+   需要先执行以下代码，以Org1中的admin用户身份运行peer：
+
+   ```shell
+   export CORE_PEER_TLS_ENABLED=true
+   export CORE_PEER_LOCALMSPID="Org1MSP"
+   export CORE_PEER_TLS_ROOTCERT_FILE=${PWD}/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt
+   export CORE_PEER_MSPCONFIGPATH=${PWD}/organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp
+   export CORE_PEER_ADDRESS=localhost:7051
+   ```
+
+   通过以下命令创建通道，以之前创建的mychannel为例
+
+   ```shell
+   peer channel create -o localhost:7050  --ordererTLSHostnameOverride orderer.example.com -c mychannel -f ./channel-artifacts/mychannel.tx --outputBlock ./channel-artifacts/mychannel.block --tls --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+   ```
+
+   <a name='wanzheng'>完整创建命令</a>：
+
+   ```bash
+   #环境变量
+   export PATH=${PWD}/../bin:$PATH
+   
+   export FABRIC_CFG_PATH=$PWD/../config
+   
+   export CORE_PEER_TLS_ENABLED=true
+   export CORE_PEER_LOCALMSPID="Org1MSP"
+   export CORE_PEER_TLS_ROOTCERT_FILE=${PWD}/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt
+   export CORE_PEER_MSPCONFIGPATH=${PWD}/organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp
+   export CORE_PEER_ADDRESS=localhost:7051
+   
+   #生成证书
+   cryptogen generate --config=./crypto-config.yaml --output=organizations
+   
+   #生成创世区块
+   configtxgen -configPath ./ -profile TwoOrgsApplicationGenesis -channelID mychannel -outputBlock ./channel-artifacts/genesis.block
+   
+   #创建channel信息
+   configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputCreateChannelTx ./channel-artifacts/mychannel.tx
+   
+   #生成锚节点信息
+   configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputAnchorPeersUpdate ./channel-artifacts/Org1MSPanchors.tx -asOrg Org1
+   
+   configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputAnchorPeersUpdate ./channel-artifacts/Org2MSPanchors.tx -asOrg Org2
+   
+   #生成channel
+   peer channel create -o localhost:7050  --ordererTLSHostnameOverride orderer.example.com -c mychannel -f ./channel-artifacts/mychannel.tx --outputBlock ./channel-artifacts/mychannel.block --tls --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+   ```
+
+   
 
 8. <a name=chaincode-mycc-nodejs>chaincode部署</a>
 
