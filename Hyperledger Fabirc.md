@@ -332,6 +332,8 @@ GOVERSION="go1.18.10"
 
 ##### HF测试网络
 
+[测试网络network.sh分析](./networksh-analysis)
+
 进入到目录：`/fabric-samples/test-network` 可以运行测试网络
 
 运行：
@@ -605,13 +607,14 @@ hyperledger网络可以有多个组织（Org）
 
 ### 手动End-2-End测试（手动创建网络）
 
-| 文件名                                  | 文件类型                     | 文件作用                                                     |
-| --------------------------------------- | ---------------------------- | ------------------------------------------------------------ |
-| [crypto-config.yaml](#cryptoconfig)     | yaml配置文件                 | 用于定义组织（Orgs）、Orderer、peer节点、用户数量；使用cryptogen可以生成模板配置文件 |
-| [organizations](#organizations)         | 文件夹                       | 通过使用crypto-config.yaml生成，用于存放各个节点的公钥、ca证书、tls等相关信息 |
-| [configtx.yaml](#configtx)              | yaml配置文件                 | 配置各个节点具体信息，包括mspid、org的策略和锚节点、网络的能力配置、applications的策略（用来配置写入创世区块的参数）、orderer使用的排序配置、channel的配置信息、策略等 |
-| [channel-artifacts](#channel-artifacts) | 文件夹                       | 用于存放创世区块(也可以自己定义在其他文件夹，参考创建创世区块的具体命令行代码)、channel信息、各个org的锚节点信息等 |
-| [compose-mynet.yaml](#compose-mynet)    | yaml配置文件(docker-compose) | docker-compose配置文件，用于配置各个节点容器的相关信息，包括镜像、环境、端口映射、网络等信息 |
+| 文件名                                             | 文件类型                          | 文件作用                                                     |
+| -------------------------------------------------- | --------------------------------- | ------------------------------------------------------------ |
+| [crypto-config.yaml](#cryptoconfig)                | yaml配置文件                      | 用于定义组织（Orgs）、Orderer、peer节点、用户数量；使用cryptogen可以生成模板配置文件 |
+| [organizations](#organizations)                    | 文件夹                            | 通过使用crypto-config.yaml生成，用于存放各个节点的公钥、ca证书、tls等相关信息 |
+| [configtx.yaml](#configtx)                         | yaml配置文件                      | 配置各个节点具体信息，包括mspid、org的策略和锚节点、网络的能力配置、applications的策略（用来配置写入创世区块的参数）、orderer使用的排序配置、channel的配置信息、策略等 |
+| [channel-artifacts](#channel-artifacts)            | 文件夹                            | 用于存放创世区块(也可以自己定义在其他文件夹，参考创建创世区块的具体命令行代码)、channel信息、各个org的锚节点信息等 |
+| [compose-mynet-base.yaml](#compose-mynet)          | yaml配置文件-base(docker-compose) | docker-compose配置文件，用于配置各个节点容器的相关信息，包括镜像、环境、端口映射、网络等信息 |
+| [docker-compose-mynet.yaml](#docker-compose-mynet) | yaml配置文件(docker-compose)      | 补充一些关于docker.sock和peercfg的一些挂在信息               |
 
 [使用以上文件的完整命令行](#wanzheng)
 
@@ -890,7 +893,7 @@ hyperledger网络可以有多个组织（Org）
    > #以下的内容很关键，注意两个内容的命名，生成创世区块是需要的，复制的文件与以下配置不一样（可能是TwoOrgsApplicationGenesis），注意名称
    > Profiles:
    >     
-   >     TwoOrgsApplicationGenesis:
+   >     TwoOrgsOrdererGenesis:
    >     # 用来生成orderer启动时所需的block,用于生成创世区块
    >         <<: *ChannelDefaults
    >         Orderer:
@@ -898,12 +901,6 @@ hyperledger网络可以有多个组织（Org）
    >             Organizations:
    >                 - *OrdererOrg
    >             Capabilities: *OrdererCapabilities
-   >         Application:
-   >             <<: *ApplicationDefaults
-   >             Organizations:
-   >                 - *Org1
-   >                 - *Org2
-   >             Capabilities: *ApplicationCapabilities
    >         Consortiums:
    >           # 这里定义了一个联盟 
    >             SampleConsortium:
@@ -924,19 +921,19 @@ hyperledger网络可以有多个组织（Org）
    >                 <<: *ApplicationCapabilities
    > 
    > ```
-
+   
    <font color=red><<: * 的操作，其实就是复制，将名称为后面跟的内容的信息复制在对应位置，避免代码冗余</font>
-
+   
    <a name='channel-artifacts'>使用configexgen工具来生成创世区块：</a>
-
+   
    ```shell
-   configtxgen -configPath ./ -profile TwoOrgsApplicationGenesis -channelID mychannel -outputBlock ./channel-artifacts/genesis.block
+configtxgen -configPath ./ -profile TwoOrgsApplicationGenesis -channelID mychannel -outputBlock ./channel-artifacts/genesis.block
    ```
 
    <font color=red>一定要注意organizations的地址复制过来的文件，为../organizations，而当前我们创建的是./organizations</font>
 
    还有就是Profile部分的Orderer的命名一定要在路径中使用正确
-
+   
    执行代码后：
 
    ![image-20230313173800773](assets/image-20230313173800773.png)
@@ -948,11 +945,11 @@ hyperledger网络可以有多个组织（Org）
    生成了一个创世区块，查看创世区块的内容为各个节点的公钥信息、权限等：
 
    ```text
-   
+
    " ???8?7@?;?ewSy|???? 
-   ? 
+? 
     
-   w                                                                                                                                                                                           ???"	mychannel*@a2828664dcd7526532e97b6904878fe2a443bd0c810299d265eeaf28659591cf?B??4<En?`??? 
+w                                                                                                                                                                                           ???"	mychannel*@a2828664dcd7526532e97b6904878fe2a443bd0c810299d265eeaf28659591cf?B??4<En?`??? 
    W?¤;
    Orderer;*
    
@@ -1109,9 +1106,9 @@ hyperledger网络可以有多个组织（Org）
    WritersAdmins*Admins 
    
    ```
-
+   
    ![image-20230313174516458](assets/image-20230313174516458.png)
-
+   
 4. 配置channel，相当于是创建了一个“群组”，可以允许或踢出组织
 
    需要一个.tx文件，生成通道交易配置
@@ -1153,11 +1150,18 @@ hyperledger网络可以有多个组织（Org）
 
    配置文件`docker-compose-cli.yaml`（在test-network里base为：`compose-test-net.yaml`，先将其拷贝至当前目录）
 
-   修改命名文件为`compose-mynet.yaml`
+   修改命名文件为`compose-mynet-base.yaml`
+
+   同时还需要复制`../test-network/compose/docker/peercfg`和
+
+   `../test-network/compose/docker/docker-compose-test-net.yaml`（修改这个yaml文件名为`docker-compose-mynet.yaml`
 
    由于我们生成的是每个组织两个peer，所以需要修改对应的配置信息，特别注意的是organizations ... 的路径，一定要修改至匹配的路径。
 
    ```yaml
+   ##compose-mynet-base.yaml`
+   ##
+   
    
    version: '3.7'
    
@@ -1247,7 +1251,7 @@ hyperledger网络可以有多个组织（Org）
        volumes:
            - ./organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com:/etc/hyperledger/fabric
            - peer0.org1.example.com:/var/hyperledger/production
-           - ../config/:/etc/hyperledger/peercfg
+          # - ../config/:/etc/hyperledger/peercfg
        working_dir: /root
        command: peer node start
        ports:
@@ -1287,7 +1291,7 @@ hyperledger网络可以有多个组织（Org）
        volumes:
            - ./organizations/peerOrganizations/org1.example.com/peers/peer1.org1.example.com:/etc/hyperledger/fabric
            - peer1.org1.example.com:/var/hyperledger/production
-           - ../config/:/etc/hyperledger/peercfg #超级大坑！！！！！！
+          # - ../config/:/etc/hyperledger/peercfg #超级大坑！！！！！！-----更正：在阅读测试网络的bash文件后发现有把config在另一个compose文件中挂载。所以此处删除
        working_dir: /root
        command: peer node start
        ports:
@@ -1327,7 +1331,7 @@ hyperledger网络可以有多个组织（Org）
        volumes:
            - ./organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com:/etc/hyperledger/fabric
            - peer0.org2.example.com:/var/hyperledger/production
-           - ../config/:/etc/hyperledger/peercfg
+           #- ../config/:/etc/hyperledger/peercfg
        working_dir: /root
        command: peer node start
        ports:
@@ -1367,7 +1371,7 @@ hyperledger网络可以有多个组织（Org）
        volumes:
            - ./organizations/peerOrganizations/org2.example.com/peers/peer1.org2.example.com:/etc/hyperledger/fabric
            - peer1.org2.example.com:/var/hyperledger/production
-           - ../config/:/etc/hyperledger/peercfg
+          # - ../config/:/etc/hyperledger/peercfg
        working_dir: /root
        command: peer node start
        ports:
@@ -1404,7 +1408,79 @@ hyperledger网络可以有多个组织（Org）
    
    ```
 
-   `docker-compose -f {{配置文件名}} up -d`--这里的配置文件名就是：`compose-mynet.yaml`
+   <a name='docker-compose-mynet'>docker-compose-mynet.yaml</a>
+
+   ```yaml
+   ##docker-compose-mynet.yaml
+   
+   # Copyright IBM Corp. All Rights Reserved.
+   #
+   # SPDX-License-Identifier: Apache-2.0
+   #
+   
+   version: '3.7'
+   services:
+     peer0.org1.example.com:
+       container_name: peer0.org1.example.com
+       image: hyperledger/fabric-peer:latest
+       labels:
+         service: hyperledger-fabric
+       environment:
+         #Generic peer variables
+         - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+         - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=fabric_test
+       volumes:
+         - ./peercfg:/etc/hyperledger/peercfg
+         - /var/run/docker.sock:/host/var/run/docker.sock
+   
+     peer1.org1.example.com:
+       container_name: peer1.org1.example.com
+       image: hyperledger/fabric-peer:latest
+       labels:
+         service: hyperledger-fabric
+       environment:
+         #Generic peer variables
+         - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+         - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=fabric_test
+       volumes:
+         - ./peercfg:/etc/hyperledger/peercfg
+         - /var/run/docker.sock:/host/var/run/docker.sock
+   
+     peer0.org2.example.com:
+       container_name: peer0.org2.example.com
+       image: hyperledger/fabric-peer:latest
+       labels:
+         service: hyperledger-fabric
+       environment:
+         #Generic peer variables
+         - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+         - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=fabric_test
+       volumes:
+         - ./peercfg:/etc/hyperledger/peercfg
+         - /var/run/docker.sock:/host/var/run/docker.sock
+   
+     peer1.org2.example.com:
+       container_name: peer1.org2.example.com
+       image: hyperledger/fabric-peer:latest
+       labels:
+         service: hyperledger-fabric
+       environment:
+         #Generic peer variables
+         - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+         - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=fabric_test
+       volumes:
+         - ./peercfg:/etc/hyperledger/peercfg
+         - /var/run/docker.sock:/host/var/run/docker.sock
+   
+     cli:
+       container_name: cli
+       image: hyperledger/fabric-tools:latest
+       volumes:
+         - ./peercfg:/etc/hyperledger/peercfg
+   
+   ```
+
+   `docker-compose -f {{配置文件名}} -f {{配置文件名}} up -d`--这里的配置文件名就是：`compose-mynet-base.yaml`和`docker-compose-mynet.yaml`
 
    注意启动如果报：error：invalid reference format
 
@@ -1476,11 +1552,26 @@ hyperledger网络可以有多个组织（Org）
    export CORE_PEER_MSPCONFIGPATH=${PWD}/organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp
    export CORE_PEER_ADDRESS=localhost:7051
    
+   #如果是重启网络，需要执行下面几步
+   ../test-network/network.sh down
+   
+   rm -rf channel-artifacts
+   
+   rm -rf organizations/ordererOrganizations
+   rm -rf organizations/peerOrganizations
+   
    #生成证书
    cryptogen generate --config=./crypto-config.yaml --output=organizations
    
+   #
+   cd organizations
+   ./ccp-generate.sh
+   cd ..
+   #启动网络
+   docker-compose -f compose-mynet-base.yaml -f docker-compose-mynet.yaml up -d
+   
    #生成创世区块
-   configtxgen -configPath ./ -profile TwoOrgsApplicationGenesis -channelID mychannel -outputBlock ./channel-artifacts/genesis.block
+   configtxgen -configPath ./ -profile TwoOrgsOrdererGenesis -channelID mychannel -outputBlock ./channel-artifacts/genesis.block
    
    #创建channel信息
    configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputCreateChannelTx ./channel-artifacts/mychannel.tx
