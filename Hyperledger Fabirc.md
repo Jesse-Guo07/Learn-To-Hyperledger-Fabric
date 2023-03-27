@@ -714,439 +714,28 @@ hyperledger网络可以有多个组织（Org）
 
    <font color=red>---------------------------2.x和1.x配置方法有不同，还需另外学习------------------------------</font>
 
-   > OU：organization unit组织单位
-   >
-   > 
-   >
+   OU：organization unit组织单位
+
+   
+
    > 我这里是直接在my-network目录下使用../bin cryptogen xxxxxx来调用cryptogen，为了之后更方便，把../bin直接加入环境变量：
    >
-   > ```shell
-   > export PATH=${PWD}/../bin:${PWD}:$PATH
-   > 
-   > #将../bin加入环境变量后，再来试试，注意这里需要删除之前生成的文件
-   > #也就是要删除organizations
-   > 
-   > rm -rf organizations
-   > cryptogen generate --config=./crypto-config.yaml --output=organizations
-   > # 得到以下输出
-   > org1.example.com
-   > org2.example.com
-   > # 这下就可以直接使用cryptogen了
-   > ```
-
-3. <a name='configtx'>创世区块配置和生成</a>
-
-   在创世区块里，写入初始参与者所有用户的信息，这样后来加入的用户则无法修改msp中相关信息。（由Hash指向区块）黑客创造一个假的peer节点，没有大家的数字签名证书，则无法与其他节点通讯。
-
-   注：Fabric2.x排序类型使用EtcdRaft
-
-   当前网络的org定义
-
-   id：就是msp id。所有操作都是通过mspid来定义，定义某个证书的名称，对应MSPDIR。
-
-   > 生成创世区块也需要一份配置文件`configtx.yaml` 我这里直接复制了`test-network/configtx/configtx.yaml`下面的
-   >
-   > ```yaml
-   > Organizations:
-   >     - &OrdererOrg
-   >         Name: Orderer     # 组织名称，要与之前config文件中的名称对应，一定一定得一致
-   >         ID: OrdererMSP        # 组织id 用来引用组织   
-   >         MSPDir: organizations/ordererOrganizations/example.com/msp    # 组织的msp文件目录
-   >         Policies:         # 定义组织的一些策略
-   >             Readers:
-   >                 Type: Signature
-   >                 Rule: "OR('OrdererMSP.member')"
-   >             Writers:
-   >                 Type: Signature
-   >                 Rule: "OR('OrdererMSP.member')"
-   >             Admins:
-   >                 Type: Signature
-   >                 Rule: "OR('OrdererMSP.admin')"
-   >                 
-   >         OrdererEndpoints:
-   >             - orderer.example.com:7050
-   >             
-   >     - &Org1
-   >         Name: Org1
-   >         ID: Org1MSP
-   >         MSPDir: organizations/peerOrganizations/org1.example.com/msp
-   >         Policies:
-   >             Readers:
-   >                 Type: Signature
-   >                 Rule: "OR('Org1MSP.admin', 'Org1MSP.peer', 'Org1MSP.client')"
-   >             Writers:
-   >                 Type: Signature
-   >                 Rule: "OR('Org1MSP.admin', 'Org1MSP.client')"
-   >             Admins:
-   >                 Type: Signature
-   >                 Rule: "OR('Org1MSP.admin')"
-   >             Endorsement:
-   >                 Type: Signature
-   >                 Rule: "OR('Org1MSP.peer')"
-   >         AnchorPeers:                       # 定义组织的锚节点，原文件中并没有定义，如果没有定义之后更新锚节点就无法找到原有的锚节点，可能需要其他方法来定义
-   >             - Host: peer0.org1.example.com # 锚节点的host地址
-   >               Port: 7051                   # 锚节点开放的端口号地址
-   >                  
-   >     - &Org2
-   >         Name: Org2
-   >         ID: Org2MSP
-   >         MSPDir: organizations/peerOrganizations/org2.example.com/msp
-   >         Policies:
-   >             Readers:
-   >                 Type: Signature
-   >                 Rule: "OR('Org2MSP.admin', 'Org2MSP.peer', 'Org2MSP.client')"
-   >             Writers:
-   >                 Type: Signature
-   >                 Rule: "OR('Org2MSP.admin', 'Org2MSP.client')"
-   >             Admins:
-   >                 Type: Signature
-   >                 Rule: "OR('Org2MSP.admin')"
-   >             Endorsement:
-   >                 Type: Signature
-   >                 Rule: "OR('Org2MSP.peer')"
-   >         AnchorPeers:
-   >             - Host: peer0.org2.example.com
-   >               Port: 9051
-   > 
-   > # fabric网络的能力配置部分              
-   > Capabilities:
-   >     Channel: &ChannelCapabilities           # Channel配置同时应用于orderer和peer
-   >         V2_0: true
-   >     Orderer: &OrdererCapabilities        # Orderer仅使用于orderer,无需担心升级peer     
-   >         V2_0: true
-   >     Application: &       # Application仅使用于Peer,无需担心升级Orderer   
-   >         V2_0: true
-   > 
-   > # Application配置用来定义要写入创世区块或配置交易的应用参数        
-   > Application: &ApplicationDefaults
-   >     Organizations:
-   >     Policies:
-   >         Readers:
-   >             Type: ImplicitMeta
-   >             Rule: "ANY Readers"
-   >         Writers:
-   >             Type: ImplicitMeta
-   >             Rule: "ANY Writers"
-   >         Admins:
-   >             Type: ImplicitMeta
-   >             Rule: "MAJORITY Admins"
-   >         LifecycleEndorsement:
-   >             Type: ImplicitMeta
-   >             Rule: "MAJORITY Endorsement"
-   >         Endorsement:
-   >             Type: ImplicitMeta
-   >             Rule: "MAJORITY Endorsement"
-   >     # Capabilities配置描述应用层级的能力需求
-   >     # 这里引用了 前面定义的 &ApplicationCapabilities 锚点 也就是Application的值放在这
-   >     Capabilities:
-   >         <<: *ApplicationCapabilities
-   >         
-   > # Orderer配置用来定义要编码写入创世区块或通道交易的排序节点参数       
-   > Orderer: &OrdererDefaults 
-   >     OrdererType: etcdraft      # 排序节点的类型 目前有 solo kafka EtcdRaft , 不同的类型对应不同的共识算法的实现
-   >     Addresses:     # orderer 服务的地址  
-   >         - orderer.example.com:7050
-   > 
-   >     EtcdRaft:        # EtcdRaft排序类型的配置
-   >         Consenters:
-   >         - Host: orderer.example.com
-   >           Port: 7050
-   >           ClientTLSCert: organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
-   >           ServerTLSCert: organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
-   >     BatchTimeout: 1s    # 区块打包的时间,到了这个时间就打包区块
-   >     BatchSize:          # 区块打包的最大包含交易数
-   >         MaxMessageCount: 10       # 一个区块里最大的交易数
-   >         AbsoluteMaxBytes: 99 MB   # 一个区块的最大字节数,任何时候都不能超过
-   >         PreferredMaxBytes: 512 KB # 一个区块的建议字节数    # 这里的配置好像没有作用目前我也不知道是啥情况
-   >         #可以根据实际情况，对上述几个数据进行调整，来优化区块链网络的处理速度
-   >     Organizations:
-   >     Policies:
-   >         Readers:
-   >             Type: ImplicitMeta
-   >             Rule: "ANY Readers"
-   >         Writers:
-   >             Type: ImplicitMeta
-   >             Rule: "ANY Writers"
-   >         Admins:
-   >             Type: ImplicitMeta
-   >             Rule: "MAJORITY Admins"
-   >         BlockValidation:
-   >             Type: ImplicitMeta
-   >             Rule: "ANY Writers"
-   > 
-   > # Channel配置用来定义要写入创世区块或配置交易的通道参数
-   > Channel: &ChannelDefaults
-   >     Policies:
-   >         Readers:
-   >             Type: ImplicitMeta
-   >             Rule: "ANY Readers"
-   >         Writers:
-   >             Type: ImplicitMeta
-   >             Rule: "ANY Writers"
-   >         Admins:
-   >             Type: ImplicitMeta
-   >             Rule: "MAJORITY Admins"
-   >     Capabilities:
-   >         <<: *ChannelCapabilities
-   >         
-   > # Profiles配置用来定义用于configtxgen工具生成创世区块或配置块的一些配置信息
-   > #以下的内容很关键，注意两个内容的命名，生成创世区块是需要的，复制的文件与以下配置不一样（可能是TwoOrgsApplicationGenesis），注意名称
-   > Profiles:
-   >     
-   >     TwoOrgsOrdererGenesis:
-   >     # 用来生成orderer启动时所需的block,用于生成创世区块
-   >         <<: *ChannelDefaults
-   >         Orderer:
-   >             <<: *OrdererDefaults
-   >             Organizations:
-   >                 - *OrdererOrg
-   >             Capabilities: *OrdererCapabilities
-   >         Consortiums:
-   >           # 这里定义了一个联盟 
-   >             SampleConsortium:
-   >                 Organizations:
-   >                     - *Org1
-   >                     - *Org2
-   > 
-   >     # TwoOrgsChannel用来生成channel配置信息                
-   >     TwoOrgsChannel:
-   >         Consortium: SampleConsortium # 引用上面定义的联盟
-   >         <<: *ChannelDefaults
-   >         Application:
-   >             <<: *ApplicationDefaults
-   >             Organizations:
-   >                 - *Org1
-   >                 - *Org2
-   >             Capabilities:
-   >                 <<: *ApplicationCapabilities
-   > 
-   > ```
-   
-   <font color=red><<: * 的操作，其实就是复制，将名称为后面跟的内容的信息复制在对应位置，避免代码冗余</font>
-   
-   <a name='channel-artifacts'>使用configexgen工具来生成创世区块：</a>
-   
-   ```shell
-configtxgen -configPath ./ -profile TwoOrgsApplicationGenesis -channelID mychannel -outputBlock ./channel-artifacts/genesis.block
-   ```
-
-   <font color=red>一定要注意organizations的地址复制过来的文件，为../organizations，而当前我们创建的是./organizations</font>
-
-   还有就是Profile部分的Orderer的命名一定要在路径中使用正确
-   
-   执行代码后：
-
-   ![image-20230313173800773](assets/image-20230313173800773.png)
-
-   查看最终生成的内容：
-
-   ![image-20230313173855808](assets/image-20230313173855808.png)
-
-   生成了一个创世区块，查看创世区块的内容为各个节点的公钥信息、权限等：
-
-   ```text
-
-   " ???8?7@?;?ewSy|???? 
-? 
-    
-w                                                                                                                                                                                           ???"	mychannel*@a2828664dcd7526532e97b6904878fe2a443bd0c810299d265eeaf28659591cf?B??4<En?`??? 
-   W?¤;
-   Orderer;*
-   
-   OrdererOrg*?(
-   MSP(((
-   
-   OrdererMSP?-----BEGIN CERTIFICATE-----
-   MIICPTCCAeOgAwIBAgIQcMcIX11bsTEphuoz2dUVhDAKBggqhkjOPQQDAjBpMQsw
-   CQYDVQQGEwJVUzETMBEGA1UECBMKQ2FsaWZvcm5pYTEWMBQGA1UEBxMNU2FuIEZy
-   YW5jaXNjbzEUMBIGA1UEChMLZXhh.....
-   .....
-   .....
-   .....
-   .....
-   -----END CERTIFICATE-----
-   ordererAdmins1
-   	Endpoints$ 
-   orderer.example.com:7050Admins"3
-   Writers( 
-   
-   
-   OrdererMSPAdmins"4
-   Admins* 
-   
-   OrdererMSPAdmins"3
-   Readers( 
-   
-   
-   OrdererMSPAdmins*Admins"
-   	BatchSize 
-   
-   ?? Admins 
-   
-   BatchTimeout 
-   2sAdmins 
-   ChannelRestrictionAdmins$
-   
-   Capabilities 
-   
-   V2_0Admins 
-   ConsensusTypeR?                                                                                                                                                                             etcdraft?
-    
-   orderer.example.com7??--BEGIN CERTIFICATE-----
-   MIICZDCCAgqgAwIBAgIQGNkB1l1vXVZrXjnwXz/fmTAKBggqhkjOPQQDAjBsMQsw
-   CQYDVQQGEwJVUzETMBEGA1UECBMKQ2FsaWZvcm5pYTEWMBQGA1UEBxMNU2FuIEZy
-   YW5jaXNjbzEUMBIGA1UEChMLZXhhbXBsZS5jb20xGjAYBgNVBAMTEXRsc2NhLmV4
-   YW1wbGUuY29tMB4XDTIzMDMxMzA4MjYwMFoXD.....
-   .....
-   ....
-   ....
-   .....
-    
-   500ms 
-    Admins"*                                                                                                                                                                                   	
-   WritersAdmins""                                                                                                                                                                             	
-   ReadersAdmins""                                                                                                                                                                             	
-   WritersAdmins""
-   Admins 
-   
-   AdminsAdmins*Admins? 
-   
-   Application? 
-   Org1MSP??
-   MSP?)?)°)
-   Org1MSP?----BEGIN CERTIFICATE-----
-   MIICUjCCAfegAwIBAgIQYv+L5fS92hZ5MDVAU2TxOzAKBggqhkjOPQQDAjBzMQsw
-   CQYDVQQGEwJVUzETMBEGA1UECBMKQ2FsaWZvcm5pYTEWMBQGA1UEBxMNU2FuIEZy
-   YW5jaXNjbzEZMBcGA1UEChMQb3JnMS5leGFtcGxlLmNvbTEcMBoGA1UEAxMTY2Eu
-   b3JnMS5leGFtcG....
-   .....
-   ....
-   ....
-   
-   ordererAdmins"E
-   Writers:, 
-                                                                                                                                                                                                
-   
-   Org1MSP 
-   
-   Org1MSPAdmins"1
-   Admins' 
-   
-   Org1MSPAdmins"6
-   
-   Endorsement' 
-   
-   Org1MSPAdmins"X
-   ReadersM? 
-   
-   Org1MSP 
-   
-   Org1MSP 
-   
-   Org1MSPAdmins*Admins?
-   Org2MSP??)
-   MSP?)?)?)
-   Org2MSP?-----BEGIN CERTIFICATE-----
-   ......
-   ......
-   ......
-   ......
-   ......
-   
-   ordererAdmins"X
-   ReadersM? 
-   
-   Org2MSP 
-   
-   Org2MSP 
-   
-   Org2MSPAdmins"E
-   Writers:, 
-                                                                                                                                                                                                
-   
-   Org2MSP 
-   
-   Org2MSPAdmins"1
-   Admins' 
-   
-   Org2MSPAdmins"6
-   
-   Endorsement' 
-   
-   Org2MSPAdmins*Admins$
-   
-   Capabilities 
-   
-   V2_0Admins""                                                                                                                                                                                	
-   ReadersAdmins""                                                                                                                                                                             	
-   WritersAdmins""
-   Admins 
-   
-   AdminsAdmins",
-   
-   Endorsement 
-   
-   EndorsementAdmins"5
-   LifecycleEndorsement 
-   
-   EndorsementAdmins*Admins&
-   HashingAlgorithm 
-   SHA256Admins-
-   BlockDataHashingStructur????AdminsI
-   OrdererAddresses5 
-   orderer.example.com:7050/Channel/Orderer/Admins$
-   
-   Capabilities 
-   
-   V2_0Admins""
-   Admins 
-   
-   AdminsAdmins""                                                                                                                                                                              	
-   ReadersAdmins""                                                                                                                                                                             	
-   WritersAdmins*Admins 
-   
-   ```
-   
-   ![image-20230313174516458](assets/image-20230313174516458.png)
-   
-4. 配置channel，相当于是创建了一个“群组”，可以允许或踢出组织
-
-   需要一个.tx文件，生成通道交易配置
 
    ```shell
-   configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputCreateChannelTx ./channel-artifacts/mychannel.tx
-   ```
-
-   使用以上命令在channel-artifacts下生成一个mychannel.tx文件
-
-   此时，该目录结构为：
-
-   ![image-20230315154627978](assets/image-20230315154627978.png)
-
-   查看.tx文件可以看到
-
-   ![image-20230315154801996](assets/image-20230315154801996.png)
-
+   export PATH=${PWD}/../bin:${PWD}:$PATH
    
-
-5. 更新锚节点
-
-   ```shell
-   # 以Org1的为例，注意-asOrg 后跟的Org1MSP是配置文件中的MSP的ID，一定要对应否则会报：Error on inspectChannelCreateTx: org with name 'Org1' does not exist in config
-   configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputAnchorPeersUpdate ./channel-artifacts/Org1MSPanchors.tx -asOrg Org1
+   #将../bin加入环境变量后，再来试试，注意这里需要删除之前生成的文件
+   #也就是要删除organizations
+   
+   rm -rf organizations
+   cryptogen generate --config=./crypto-config.yaml --output=organizations
+   # 得到以下输出
+   org1.example.com
+   org2.example.com
+   # 这下就可以直接使用cryptogen了
    ```
 
-   然后会打印：
-
-   ![image-20230315161138211](assets/image-20230315161138211.png)
-
-   同理更新Org2MSP的，这样锚节点就更新好了。
-
-   当前channel-artifacts目录：
-
-   ![image-20230315161550924](assets/image-20230315161550924.png)
-
-6. <a name='compose-mynet'>启动“电脑”：docker-compose启动网络</a>
+3. <a name='compose-mynet'>启动“电脑”：docker-compose启动网络</a>
 
    配置文件`docker-compose-cli.yaml`（在test-network里base为：`compose-test-net.yaml`，先将其拷贝至当前目录）
 
@@ -1518,11 +1107,258 @@ w                                                                               
 
    ![image-20230321174730807](assets/image-20230321174730807.png)
 
-   这里说明我们后面要使用peer命令又必须得要这个环境变量，这里就直接在compose配置文件中将../config挂载在对应的路径，参考上面的文件内容（大坑）。
+   这里说明我们后面要使用peer命令又必须得要这个环境变量，这里就直接在compose配置文件中将../config挂载在对应的路径，参考上面的文件内容（大坑）--这里实际上 测试网络还有一个compose文件，里面挂载了config和peercfg。
 
-7. 生成channel
+4. <a name='configtx'>创世区块配置和生成</a>
 
-   需要先执行以下代码，以Org1中的admin用户身份运行peer：
+   在创世区块里，写入初始参与者所有用户的信息，这样后来加入的用户则无法修改msp中相关信息。（由Hash指向区块）黑客创造一个假的peer节点，没有大家的数字签名证书，则无法与其他节点通讯。
+
+   注：Fabric2.x排序类型使用EtcdRaft
+
+   当前网络的org定义
+
+   id：就是msp id。所有操作都是通过mspid来定义，定义某个证书的名称，对应MSPDIR。
+
+   > 生成创世区块也需要一份配置文件`configtx.yaml` ，根据需求写入对应的配置信息：
+   >
+   > （2.2之后将不再要求必须拥有系统通道，所以注意最后的Policies的配置）：
+   >
+   > ```yaml
+   > Organizations:
+   >     - &OrdererOrg
+   >         Name: Orderer     # 组织名称，要与之前config文件中的名称对应，一定一定得一致
+   >         ID: OrdererMSP        # 组织id 用来引用组织   
+   >         MSPDir: organizations/ordererOrganizations/example.com/msp    # 组织的msp文件目录
+   >         Policies:         # 定义组织的一些策略
+   >             Readers:
+   >                 Type: Signature
+   >                 Rule: "OR('OrdererMSP.member')"
+   >             Writers:
+   >                 Type: Signature
+   >                 Rule: "OR('OrdererMSP.member')"
+   >             Admins:
+   >                 Type: Signature
+   >                 Rule: "OR('OrdererMSP.admin')"
+   >                 
+   >         OrdererEndpoints:
+   >             - orderer.example.com:7050
+   >             
+   >     - &Org1
+   >         Name: Org1
+   >         ID: Org1MSP
+   >         MSPDir: organizations/peerOrganizations/org1.example.com/msp
+   >         Policies:
+   >             Readers:
+   >                 Type: Signature
+   >                 Rule: "OR('Org1MSP.admin', 'Org1MSP.peer', 'Org1MSP.client')"
+   >             Writers:
+   >                 Type: Signature
+   >                 Rule: "OR('Org1MSP.admin', 'Org1MSP.client')"
+   >             Admins:
+   >                 Type: Signature
+   >                 Rule: "OR('Org1MSP.admin')"
+   >             Endorsement:
+   >                 Type: Signature
+   >                 Rule: "OR('Org1MSP.peer')"
+   >         AnchorPeers:                       # 定义组织的锚节点，原文件中并没有定义，如果没有定义之后更新锚节点就无法找到原有的锚节点，可能需要其他方法来定义
+   >             - Host: peer0.org1.example.com # 锚节点的host地址
+   >               Port: 7051                   # 锚节点开放的端口号地址
+   >                  
+   >     - &Org2
+   >         Name: Org2
+   >         ID: Org2MSP
+   >         MSPDir: organizations/peerOrganizations/org2.example.com/msp
+   >         Policies:
+   >             Readers:
+   >                 Type: Signature
+   >                 Rule: "OR('Org2MSP.admin', 'Org2MSP.peer', 'Org2MSP.client')"
+   >             Writers:
+   >                 Type: Signature
+   >                 Rule: "OR('Org2MSP.admin', 'Org2MSP.client')"
+   >             Admins:
+   >                 Type: Signature
+   >                 Rule: "OR('Org2MSP.admin')"
+   >             Endorsement:
+   >                 Type: Signature
+   >                 Rule: "OR('Org2MSP.peer')"
+   >         AnchorPeers:
+   >             - Host: peer0.org2.example.com
+   >               Port: 9051
+   > 
+   > # fabric网络的能力配置部分              
+   > Capabilities:
+   >     Channel: &ChannelCapabilities           # Channel配置同时应用于orderer和peer
+   >         V2_0: true
+   >     Orderer: &OrdererCapabilities        # Orderer仅使用于orderer,无需担心升级peer     
+   >         V2_0: true
+   >     Application: &       # Application仅使用于Peer,无需担心升级Orderer   
+   >         V2_0: true
+   > 
+   > # Application配置用来定义要写入创世区块或配置交易的应用参数        
+   > Application: &ApplicationDefaults
+   >     Organizations:
+   >     Policies:
+   >         Readers:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Readers"
+   >         Writers:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Writers"
+   >         Admins:
+   >             Type: ImplicitMeta
+   >             Rule: "MAJORITY Admins"
+   >         LifecycleEndorsement:
+   >             Type: ImplicitMeta
+   >             Rule: "MAJORITY Endorsement"
+   >         Endorsement:
+   >             Type: ImplicitMeta
+   >             Rule: "MAJORITY Endorsement"
+   >     # Capabilities配置描述应用层级的能力需求
+   >     # 这里引用了 前面定义的 &ApplicationCapabilities 锚点 也就是Application的值放在这
+   >     Capabilities:
+   >         <<: *ApplicationCapabilities
+   >         
+   > # Orderer配置用来定义要编码写入创世区块或通道交易的排序节点参数       
+   > Orderer: &OrdererDefaults 
+   >     OrdererType: etcdraft      # 排序节点的类型 目前有 solo kafka EtcdRaft , 不同的类型对应不同的共识算法的实现
+   >     Addresses:     # orderer 服务的地址  
+   >         - orderer.example.com:7050
+   > 
+   >     EtcdRaft:        # EtcdRaft排序类型的配置
+   >         Consenters:
+   >         - Host: orderer.example.com
+   >           Port: 7050
+   >           ClientTLSCert: organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+   >           ServerTLSCert: organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+   >     BatchTimeout: 1s    # 区块打包的时间,到了这个时间就打包区块
+   >     BatchSize:          # 区块打包的最大包含交易数
+   >         MaxMessageCount: 10       # 一个区块里最大的交易数
+   >         AbsoluteMaxBytes: 99 MB   # 一个区块的最大字节数,任何时候都不能超过
+   >         PreferredMaxBytes: 512 KB # 一个区块的建议字节数    # 这里的配置好像没有作用目前我也不知道是啥情况
+   >         #可以根据实际情况，对上述几个数据进行调整，来优化区块链网络的处理速度
+   >     Organizations:
+   >     Policies:
+   >         Readers:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Readers"
+   >         Writers:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Writers"
+   >         Admins:
+   >             Type: ImplicitMeta
+   >             Rule: "MAJORITY Admins"
+   >         BlockValidation:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Writers"
+   > 
+   > # Channel配置用来定义要写入创世区块或配置交易的通道参数
+   > Channel: &ChannelDefaults
+   >     Policies:
+   >         Readers:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Readers"
+   >         Writers:
+   >             Type: ImplicitMeta
+   >             Rule: "ANY Writers"
+   >         Admins:
+   >             Type: ImplicitMeta
+   >             Rule: "MAJORITY Admins"
+   >     Capabilities:
+   >         <<: *ChannelCapabilities
+   >         
+   > # Profiles配置用来定义用于configtxgen工具生成创世区块或配置块的一些配置信息
+   > #以下的内容很关键，注意两个内容的命名，生成创世区块是需要的，复制的文件与以下配置不一样（可能是TwoOrgsApplicationGenesis），注意名称
+   > Profiles:
+   > #这里非常关键，采用这种配置方式才是应用通道而不是系统通道===即不要去定义联盟
+   >       TwoOrgsApplicationGenesis:
+   >         <<: *ChannelDefaults
+   >         Orderer:
+   >             <<: *OrdererDefaults
+   >             Organizations:
+   >                 - *OrdererOrg
+   >             Capabilities: *OrdererCapabilities 
+   >         Application:
+   >               <<: *ApplicationDefaults
+   >               Organizations:
+   >                   - *Org1
+   >                   - *Org2
+   >         Capabilities: *ApplicationCapabilities
+   > 
+   > ```
+
+   <font color=red><<: * 的操作，其实就是复制，将名称为后面跟的内容的信息复制在对应位置，避免代码冗余</font>
+
+   <a name='channel-artifacts'>使用configexgen工具来生成创世区块：</a>
+
+   ```shell
+   configtxgen -configPath ./ -profile TwoOrgsApplicationGenesis -outputBlock ./channel-artifacts/channel1.block -channelID channel1
+   ```
+
+   <font color=red>一定要注意organizations的地址，如果是复制过来的配置文件修改，为../organizations，而当前我们创建的是./organizations</font>
+
+   还有就是Profile部分的Orderer的命名一定要在路径中使用正确
+
+   执行代码后：
+
+   ![image-20230313173800773](assets/image-20230313173800773.png)
+
+   生成了一个创世区块，查看创世区块的内容为各个节点的公钥信息、权限等：
+
+      ![image-20230313174516458](assets/image-20230313174516458.png)
+
+4. 创建应用通道
+
+   配置channel，相当于是创建了一个“群组”，可以允许或踢出组织
+
+   创建应用程序通道：
+
+   对于v2.4，有了通道创世块，使用命令创建通道很容易。为了简化后续命令，我们还需要设置一些环境变量来建立测试网络中节点的证书位置：
+
+   ```shell
+   #创建环境变量
+   
+   export ORDERER_CA=${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+   export ORDERER_ADMIN_TLS_SIGN_CERT=${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+   export ORDERER_ADMIN_TLS_PRIVATE_KEY=${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.key
+   ```
+
+   运行以下命令以创建在排序服务上命名的通道：
+
+   ```shell
+   #创建在排序服务上命名的通道--以channel1为例，将排序节点加入channel1
+   osnadmin channel join --channelID channel1 --config-block ./channel-artifacts/channel1.block -o localhost:7053 --ca-file "$ORDERER_CA" --client-cert "$ORDERER_ADMIN_TLS_SIGN_CERT" --client-key "$ORDERER_ADMIN_TLS_PRIVATE_KEY"
+   ```
+
+   成功后会返回以下内容：
+
+   ![image-20230327173926448](assets/image-20230327173926448.png)
+
+   由"active"可知此时通道处于活动状态，可供对等方加入。
+
+   可以使用以下指令列出orderer上的通道：
+
+   ```shell
+   #list列出orderer上的通道
+   osnadmin channel list -o localhost:7053 --ca-file "$ORDERER_CA" --client-cert "$ORDERER_ADMIN_TLS_SIGN_CERT" --client-key "$ORDERER_ADMIN_TLS_PRIVATE_KEY"
+   ```
+
+   可以看到刚刚创建了一个系统通道：
+
+   ![image-20230327174004983](assets/image-20230327174004983.png)
+
+   可以使用以下命令删除系统通道：
+
+   ```shell
+   #remove
+   
+   osnadmin channel remove -o localhost:7053 --channelID channel1 --ca-file $ORDERER_CA --client-cert $ORDERER_ADMIN_TLS_SIGN_CERT --client-key $ORDERER_ADMIN_TLS_PRIVATE_KEY
+   ```
+
+   返回一个Status: 204![image-20230327144031218](assets/image-20230327144031218.png)
+
+5. 将peer节点加入channel
+
+   设置以下环境变量以指示我们充当 Org1 管理员并面向 Org1 的peer节点（相当于此时是操作Org1中的指定节点）：就不用进入节点容器内部配置
 
    ```shell
    export CORE_PEER_TLS_ENABLED=true
@@ -1532,25 +1368,115 @@ w                                                                               
    export CORE_PEER_ADDRESS=localhost:7051
    ```
 
-   通过以下命令创建通道，以之前创建的mychannel为例
+   在使用peer命令时，一定得记住修改：`export FABRIC_CFG_PATH=$PWD/../config/`
+
+   如上，将peer0.org1.example.com加入channel1：
 
    ```shell
-   peer channel create -o localhost:7050  --ordererTLSHostnameOverride orderer.example.com -c mychannel -f ./channel-artifacts/mychannel.tx --outputBlock ./channel-artifacts/mychannel.block --tls --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+   peer channel join -b ./channel-artifacts/channel1.block
+   
+   
+   #成功后会有如下输出
+   [channelCmd] InitCmdFactory -> INFO 001 Endorser and orderer connections initialized
+   [channelCmd] executeJoin -> INFO 002 Successfully submitted proposal to join channel
    ```
 
-   <a name='wanzheng'>完整创建命令</a>：
+   通过`peer channel list`查看当前节点加入了哪些channel：
+
+   ![image-20230327174448367](assets/image-20230327174448367.png)
+
+   同理可以将其他需要加入的节点，重复执行相似的命令
+
+6. 设置锚节点(前面设置过锚节点，可以跳过)-----<font color=red>更新通道配置可以参考这些步骤</font>
+
+   ```shell
+   # 以Org1的为例，依然是首先进行环境变量配置，由于之前config.yaml中我们已经指定了锚节点，所以这里算是更新锚节点，当时设置的是peer0，这里我们将其更新为peer1
+   export CORE_PEER_LOCALMSPID="Org1MSP"
+   export CORE_PEER_TLS_ROOTCERT_FILE=${PWD}/organizations/peerOrganizations/org1.example.com/peers/peer1.org1.example.com/tls/ca.crt
+   export CORE_PEER_MSPCONFIGPATH=${PWD}/organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp
+   export CORE_PEER_ADDRESS=localhost:7057
+   
+   #获取通道最新配置
+   peer channel fetch config channel-artifacts/config_block.pb -o localhost:7050 --ordererTLSHostnameOverride orderer.example.com -c channel1 --tls --cafile "$ORDERER_CA"
+   ```
+
+   然后会打印：
+
+   ![image-20230327175047635](assets/image-20230327175047635.png)
+
+   进入channel-artifacts：
+
+   ```shell
+   #将 protobuf 中的块解码为可以读取和编辑的 JSON 对象
+   configtxlator proto_decode --input config_block.pb --type common.Block --output config_block.json
+   
+   #jq查询数据并将其写入config.json文件
+   
+   jq '.data.data[0].payload.data.config' config_block.json > config.json
+   ```
+
+   这时可以查看config.json文件可以发现此时Org1的Anchor peer为peer0：
+
+   ![image-20230327175312008](assets/image-20230327175312008.png)
+
+   ```shell
+   #复制confi.json
+   cp config.json config_copy.json
+   
+   #使用jq命令将config_copy.json数据查询并修改对应的数据，存到modified_config.json
+   
+   #-------------注--意------------：
+   # 官方文档为....groups.Org1MSP.values...这里的Org1MSP为之前config.yaml中的组织命名，例如我当时命名为Org1，这里就应该改为如下内容
+   
+   jq '.channel_group.groups.Application.groups.Org1.values += {"AnchorPeers":{"mod_policy": "Admins","value":{"anchor_peers": [{"host": "peer0.org1.example.com","port": 7051}]},"version": "0"}}' config_copy.json > modified_config.json
+   
+   #如此，在modified_config.json中提供了 JSON 格式的通道配置的更新版本，执行以下指令将原始和修改后的通道配置转换回 protobuf 格式，并计算它们之间的差异
+   configtxlator proto_encode --input config.json --type common.Config --output config.pb
+   configtxlator proto_encode --input modified_config.json --type common.Config --output modified_config.pb
+   configtxlator compute_update --channel_id channel1 --original config.pb --updated modified_config.pb --output config_update.pb
+   ```
+
+   如果更新前后数据一样：也就是没有改变会报错![image-20230327180009889](assets/image-20230327180009889.png)
+
+   如果改变，则不会有任何打印，这样名为`config_update.pb`的protobuf就包含我们需要应用于通道配置的锚节点更新信息，将配置更新包装在事务信封中以创建通道配置更新事务
+
+   ```shell
+   configtxlator proto_decode --input config_update.pb --type common.ConfigUpdate --output config_update.json
+   echo '{"payload":{"header":{"channel_header":{"channel_id":"channel1", "type":2}},"data":{"config_update":'$(cat config_update.json)'}}}' | jq . > config_update_in_envelope.json
+   configtxlator proto_encode --input config_update_in_envelope.json --type common.Envelope --output config_update_in_envelope.pb
+   ```
+
+   返回上一级目录（my-network）
+
+   更新锚节点信息：
+
+   ```shell
+   peer channel update -f channel-artifacts/config_update_in_envelope.pb -c channel1 -o localhost:7050  --ordererTLSHostnameOverride orderer.example.com --tls --cafile "${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem"
+   ```
+
+   将得到以下反馈：![image-20230327180548028](assets/image-20230327180548028.png)
+
+   再重新获取最新配置块的信息，使用jq查看当前配置
+
+   ```shell
+   peer channel fetch config config_block.pb -o orderer.example.com:7050 -c channel1 --tls --cafile $ORDERER_CA 
+   
+   configtxlator proto_decode --input config_block.pb --type common.Block | jq .data.data[0].payload.data.config > config.json
+   
+   jq '.channel_group.groups.Application.groups' config.json
+   ```
+
+   ![image-20230327180808715](assets/image-20230327180808715.png)
+
+   锚节点信息已经更新为我们想要的节点。
+
+7. <a name='wanzheng'>完整创建命令</a>：
 
    ```bash
    #环境变量
    export PATH=${PWD}/../bin:$PATH
    
    export FABRIC_CFG_PATH=$PWD/../config
-   
-   export CORE_PEER_TLS_ENABLED=true
-   export CORE_PEER_LOCALMSPID="Org1MSP"
-   export CORE_PEER_TLS_ROOTCERT_FILE=${PWD}/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt
-   export CORE_PEER_MSPCONFIGPATH=${PWD}/organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp
-   export CORE_PEER_ADDRESS=localhost:7051
    
    #如果是重启网络，需要执行下面几步
    ../test-network/network.sh down
@@ -1571,25 +1497,36 @@ w                                                                               
    docker-compose -f compose-mynet-base.yaml -f docker-compose-mynet.yaml up -d
    
    #生成创世区块
-   configtxgen -configPath ./ -profile TwoOrgsOrdererGenesis -channelID mychannel -outputBlock ./channel-artifacts/genesis.block
+   configtxgen -configPath ./ -profile TwoOrgsApplicationGenesis -outputBlock ./channel-artifacts/channel1.block -channelID channel1
    
-   #创建channel信息
-   configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputCreateChannelTx ./channel-artifacts/mychannel.tx
+   #创建应用通道
+   	#创建环境变量--一定要在my-network目录下
+   export ORDERER_CA=${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+   export ORDERER_ADMIN_TLS_SIGN_CERT=${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+   export ORDERER_ADMIN_TLS_PRIVATE_KEY=${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.key
    
-   #生成锚节点信息
-   configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputAnchorPeersUpdate ./channel-artifacts/Org1MSPanchors.tx -asOrg Org1
+   	#通过channel.block创建在排序服务上命名的通道--以channel1为例，将排序节点加入channel1
+   osnadmin channel join --channelID channel1 --config-block ./channel-artifacts/channel1.block -o localhost:7053 --ca-file "$ORDERER_CA" --client-cert "$ORDERER_ADMIN_TLS_SIGN_CERT" --client-key "$ORDERER_ADMIN_TLS_PRIVATE_KEY"
    
-   configtxgen -configPath ./ -profile TwoOrgsChannel -channelID mychannel -outputAnchorPeersUpdate ./channel-artifacts/Org2MSPanchors.tx -asOrg Org2
+   #list列出orderer上的通道
+   osnadmin channel list -o localhost:7053 --ca-file "$ORDERER_CA" --client-cert "$ORDERER_ADMIN_TLS_SIGN_CERT" --client-key "$ORDERER_ADMIN_TLS_PRIVATE_KEY"
    
-   #生成channel
-   peer channel create -o localhost:7050  --ordererTLSHostnameOverride orderer.example.com -c mychannel -f ./channel-artifacts/mychannel.tx --outputBlock ./channel-artifacts/mychannel.block --tls --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+   #将peer加入channel
+   	#以peer0.org1为例
+   export CORE_PEER_TLS_ENABLED=true
+   export CORE_PEER_LOCALMSPID="Org1MSP"
+   export CORE_PEER_TLS_ROOTCERT_FILE=${PWD}/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt
+   export CORE_PEER_MSPCONFIGPATH=${PWD}/organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp
+   export CORE_PEER_ADDRESS=localhost:7051
+   
+   peer channel join -b ./channel-artifacts/channel1.block
    ```
-
-   
 
 8. <a name=chaincode-mycc-nodejs>chaincode部署</a>
 
    以fabric的asset-transfer-basic/chaincode-go为例（这里是具体的命令行）
+
+   依然是需要先执行对应peer节点的环境变量配置
 
    `peer lifecycle chaincode package basic.tar.gz --path ./chaincode-go --lang golang --label basic_1`
 
