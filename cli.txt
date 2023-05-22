@@ -1,0 +1,32 @@
+#启动所有的已有容器：
+docker start $(docker ps -a | awk '{ print $1}' | tail -n +2)
+
+#测试网络部署智能合约-不指明通道会默认为mychannel
+./network.sh deployCC -ccn 智能合约名 -ccp {智能合约地址} -ccl javascript -c 通道名
+
+# 为了使用peer将相关配置加入环境变量，其中需要在test-network下
+#export PATH=${PWD}/../bin:$PATH
+#export FABRIC_CFG_PATH=$PWD/../config/
+
+#ps：需要先使的一个peer具有cli操作权（环境变量声明）eg：
+export CORE_PEER_TLS_ENABLED=true 
+export CORE_PEER_LOCALMSPID="Org1MSP"
+
+#CORE_PEER_TLS_ROOTCERT_FILE和CORE_PEER_MSPCONFIGPATH环境变量指向Org1的organizations文件夹中的的加密材料，一般可能需要把所有的组织都加入环境变量
+export CORE_PEER_TLS_ROOTCERT_FILE=${PWD}/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt
+export CORE_PEER_MSPCONFIGPATH=${PWD}/organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp
+export CORE_PEER_ADDRESS=localhost:7051 
+
+export CORE_PEER_LOCALMSPID="Org2MSP"
+export CORE_PEER_TLS_ROOTCERT_FILE=${PWD}/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt
+export CORE_PEER_MSPCONFIGPATH=${PWD}/organizations/peerOrganizations/org2.example.com/users/Admin@org2.example.com/msp
+export CORE_PEER_ADDRESS=localhost:9051
+
+#调用智能合约的函数(一般是”交易“)
+export org1_CertFiles=${PWD}/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt
+export org2_CertFiles=${PWD}/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt
+
+peer chaincode invoke -o localhost:7050 --ordererTLSHostnameOverride orderer.example.com --tls --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem -C 通道名 -n 智能合约名 --peerAddresses localhost:7051 --tlsRootCertFiles $org1_CertFiles --peerAddresses localhost:9051 --tlsRootCertFiles $org2_CertFiles -c '{"function":"函数名","Args":[参数]}'
+
+#调用查询相关的函数
+peer chaincode query -C 通道名 -n 智能合约名 -c '{"Args":["函数名","参数1","参数2"]}'
