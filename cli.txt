@@ -1,12 +1,15 @@
 #启动所有的已有容器：
 docker start $(docker ps -a | awk '{ print $1}' | tail -n +2)
 
+#创建通道
+./network.sh createChannel -c 通道名
+
 #测试网络部署智能合约-不指明通道会默认为mychannel
 ./network.sh deployCC -ccn 智能合约名 -ccp {智能合约地址} -ccl javascript -c 通道名
 
 # 为了使用peer将相关配置加入环境变量，其中需要在test-network下
-#export PATH=${PWD}/../bin:$PATH
-#export FABRIC_CFG_PATH=$PWD/../config/
+export PATH=${PWD}/../bin:$PATH
+export FABRIC_CFG_PATH=$PWD/../config/
 
 #ps：需要先使的一个peer具有cli操作权（环境变量声明）eg：
 export CORE_PEER_TLS_ENABLED=true 
